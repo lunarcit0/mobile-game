@@ -12,7 +12,8 @@ export class AudioEngine {
     this.L = { x: 0, z: 0, yaw: 0 };       // listener
     this.mode = 'street';
     this.shopKind = 0;
-    this.sirenT = rand(25, 50);
+    this.sirenT = rand(12, 25);
+    this.chatT = 0; this.hornT = 1; this.jackT = rand(25, 60); this.brakeT = rand(10, 30); this.babT = 0;
     this.coT = 0;
     this.t = 0;
     this.trainSrc = null;
@@ -45,6 +46,12 @@ export class AudioEngine {
       last = (last + 0.02 * x) / 1.02;
       b[i] = last * 3.5;
     }
+    // urban-canyon echo: a generated impulse response, fed by every positional one-shot
+    const irLen = Math.floor(sr * 2.4), ir = ctx.createBuffer(2, irLen, sr);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < irLen; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.6); }
+    this.rev = ctx.createConvolver(); this.rev.buffer = ir;
+    const revOut = ctx.createGain(); revOut.gain.value = 0.55; this.rev.connect(revOut); revOut.connect(this.master);
+    this.revSend = ctx.createGain(); this.revSend.gain.value = 0.35; this.revSend.connect(this.rev);
     this.buildBeds();
     this.buildVoices();
     this.ready = true;
@@ -104,6 +111,10 @@ export class AudioEngine {
       tunnel: this.layer(this.brown, 'lowpass', 130, 0.8),
       tunnelHiss: this.layer(this.white, 'bandpass', 1600, 0.5),
     };
+    // crowd murmur: four formant-ish bands whose levels jump together like syllables
+    this.babble = [[430, 0.034], [880, 0.04], [1550, 0.03], [2700, 0.015]].map(([f, base]) => {
+      const l = this.layer(this.white, 'bandpass', f, 2.2); l.base = base; l.f0 = f; return l;
+    });
     this.hum = this.ctx.createGain(); this.hum.gain.value = 0; this.hum.connect(this.master);
     this.humOsc = this.osc('sine', 60, this.hum);
     this.humOsc2 = this.osc('sine', 120, this.hum);
@@ -162,9 +173,24 @@ export class AudioEngine {
 
     // --- street bed (strength follows how busy the nearby traffic is)
     const busy = S.busy ?? 0.5;
-    sm(B.rumble.gain.gain, street ? 0.34 + 0.12 * busy : 0, 0.4);
-    sm(B.wash.gain.gain, street ? 0.04 + 0.05 * busy : 0, 0.4);
-    sm(B.hiss.gain.gain, street ? 0.006 : 0, 0.4);
+    const driving = S.mode === 'driving';
+    sm(B.rumble.gain.gain, street ? 0.15 + 0.07 * busy : 0, 0.4);
+    sm(B.wash.gain.gain, street ? 0.035 + 0.04 * busy : 0, 0.4);
+    sm(B.hiss.gain.gain, street ? 0.004 : 0, 0.4);
+    sm(this.revSend.gain, street ? 0.4 : (sub ? 0.7 : 0.12), 0.5);
+
+    // --- crowd murmur (all bands share one syllable-rate envelope so it reads as voices, not static)
+    const foodyRoom = shop && [0, 1, 2, 3, 5, 9, 10].includes(this.shopKind);
+    const crowdLvl = street ? (driving ? 0.4 : 1) * (0.7 + 0.5 * busy) : foodyRoom ? 0.5 : sub ? 0.35 : 0;
+    this.babT -= dt;
+    if (this.babT <= 0) {
+      this.babT = 0.1 + Math.random() * 0.2;
+      const syl = 0.3 + Math.random() * 0.9;
+      for (const l of this.babble) {
+        l.gain.gain.setTargetAtTime(l.base * crowdLvl * syl * (0.7 + Math.random() * 0.6), now, 0.07);
+        l.filter.frequency.setTargetAtTime(l.f0 * (0.78 + Math.random() * 0.5), now, 0.08);
+      }
+    }
     B.wash.filter.frequency.setTargetAtTime(600 + 400 * Math.sin(this.t * 0.17) + 200 * busy, now, 0.5);
 
     // --- spot sounds that only exist on the street
@@ -186,6 +212,11 @@ export class AudioEngine {
     sm(this.hum.gain, shop ? ([0, 4, 10].includes(k) ? 0.035 : 0.014) : (sub ? 0.02 : 0));
     this.humOsc.frequency.setTargetAtTime(k === 4 ? 100 : 60, now, 0.1);
     this.buzzGain.gain.value = shop && k === 11 ? 0.02 : 0;   // barber clippers (an LFO gates it on and off)
+
+    if ((foodyRoom || sub) && !street) {
+      this.chatT -= dt;
+      if (this.chatT <= 0) { this.chatT = rand(1.2, 3.5); this.chatter(); }
+    }
 
     // --- subway station
     sm(B.tunnel.gain.gain, sub ? 0.3 : 0, 0.4);
@@ -218,7 +249,15 @@ export class AudioEngine {
     // --- occasional far-away siren and ambient pigeon coos on the street
     if (street) {
       this.sirenT -= dt;
-      if (this.sirenT <= 0) { this.siren(); this.sirenT = rand(70, 130); }
+      if (this.sirenT <= 0) { this.siren(); this.sirenT = rand(28, 60); }
+      this.chatT -= dt;
+      if (this.chatT <= 0) { this.chatT = rand(0.3, 1.1); if (!driving || Math.random() < 0.4) this.chatter(); }
+      this.hornT -= dt;
+      if (this.hornT <= 0) { this.hornT = rand(1.2, 4.5) / (0.5 + busy); this.cityHonk(); }
+      this.jackT -= dt;
+      if (this.jackT <= 0) { this.jackT = rand(50, 110); this.jackhammer(); }
+      this.brakeT -= dt;
+      if (this.brakeT <= 0) { this.brakeT = rand(18, 45); this.busBrake(); }
       this.coT -= dt;
       if (this.coT <= 0 && S.nearNpc) { this.coo(S.nearNpc.x, S.nearNpc.z); this.coT = rand(6, 20); }
     }
@@ -249,8 +288,8 @@ export class AudioEngine {
       const f = base + c.v * (heavy ? 2.4 : 3.0) + Math.sin(this.t * 9 + i) * 0.6;
       v.o1.frequency.setTargetAtTime(f, now, 0.1);
       v.o2.frequency.setTargetAtTime(f * 0.5, now, 0.1);
-      v.f.frequency.setTargetAtTime(Math.min(sp.cutoff, 650 + c.v * 40), now, 0.1);
-      v.g.gain.setTargetAtTime(0.05 * sp.gain * (heavy ? 1.5 : 1) * (0.5 + Math.min(1, c.v / 6) * 0.5), now, 0.1);
+      v.f.frequency.setTargetAtTime(Math.min(sp.cutoff, 380 + c.v * 22), now, 0.1);
+      v.g.gain.setTargetAtTime(0.03 * sp.gain * (heavy ? 1.5 : 1) * (0.5 + Math.min(1, c.v / 6) * 0.5), now, 0.1);
       v.p.pan.setTargetAtTime(sp.pan, now, 0.1);
     }
   }
@@ -268,19 +307,24 @@ export class AudioEngine {
       gain = vol * sp.gain; p.pan.value = sp.pan;
     }
     if (gain < 0.004) return null;
-    g.connect(p); p.connect(this.master);
+    g.connect(p); p.connect(this.master); p.connect(this.revSend);
     return { g, gain, p, end: () => { setTimeout(() => { try { g.disconnect(); p.disconnect(); } catch (e) { /* ignore */ } }, 4000); } };
   }
 
-  honk(x, z, type = 'sedan') {
+  honk(x, z, type = 'sedan', lenOverride = null) {
     if (!this.ready) return;
     const ctx = this.ctx, t = ctx.currentTime;
+    if (x != null) {   // cap overlapping positional horns so a jam is busy, not a wall of noise
+      this.honkLog = (this.honkLog || []).filter((h) => t - h < 1.5);
+      if (this.honkLog.length >= 3) return;
+      this.honkLog.push(t);
+    }
     const s = this.shot(x, z, 16, 0.9);
     if (!s) return;
     const pairs = { taxi: [466, 587], sedan: [415, 523], suv: [370, 466], van: [330, 415], bus: [250, 311] };
     const [f1, f2] = pairs[type] || pairs.sedan;
-    const len = type === 'bus' ? 0.75 : (x == null ? 0.35 : 0.3 + rng() * 0.4);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+    const len = lenOverride ?? (type === 'bus' ? 0.75 : (x == null ? 0.35 : 0.3 + rng() * 0.4));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = x == null ? 2400 : Math.min(2400, this.spatial(x, z, 16).cutoff * 1.4);
     lp.connect(s.g);
     for (const f of [f1, f2]) {
       const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f; o.connect(lp);
@@ -375,12 +419,95 @@ export class AudioEngine {
     o.connect(lp); lp.connect(s.g);
     const dur = 11;
     s.g.gain.setValueAtTime(0, t);
-    s.g.gain.linearRampToValueAtTime(0.022, t + 4);
-    s.g.gain.linearRampToValueAtTime(0.03, t + 6);
+    s.g.gain.linearRampToValueAtTime(0.045, t + 4);
+    s.g.gain.linearRampToValueAtTime(0.06, t + 6);
     s.g.gain.linearRampToValueAtTime(0, t + dur);
     p.pan.setValueAtTime(-0.8, t); p.pan.linearRampToValueAtTime(0.8, t + dur);
     o.start(t); lfo.start(t); o.stop(t + dur + 0.1); lfo.stop(t + dur + 0.1);
     s.end();
+  }
+
+  chirp(x, z, { f0, f1, dur = 0.09, vol = 0.18, type = 'triangle', vib = 0, ref = 10, lp = 6000 } = {}) {
+    if (!this.ready) return;
+    const ctx = this.ctx, t = ctx.currentTime, sh = this.shot(x, z, ref, 1);
+    if (!sh) return;
+    const o = ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    if (vib) { const v = ctx.createOscillator(), vg = ctx.createGain(); v.frequency.value = 38; vg.gain.value = vib; v.connect(vg); vg.connect(o.frequency); v.start(t); v.stop(t + dur + 0.05); }
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp;
+    o.connect(f); f.connect(sh.g);
+    sh.g.gain.setValueAtTime(0, t); sh.g.gain.linearRampToValueAtTime(vol * sh.gain, t + 0.01); sh.g.gain.linearRampToValueAtTime(0, t + dur);
+    o.start(t); o.stop(t + dur + 0.05); sh.end();
+  }
+
+  ratSqueak(x, z, hurt = false) {
+    if (hurt) this.chirp(x, z, { f0: 2600, f1: 1300, dur: 0.16, vol: 0.3, vib: 140 });
+    else { this.chirp(x, z, { f0: 2400, f1: 3800, dur: 0.07, vol: 0.28 }); setTimeout(() => this.chirp(x, z, { f0: 2700, f1: 4200, dur: 0.07, vol: 0.24 }), 110); }
+  }
+  ratDie(x, z) { this.chirp(x, z, { f0: 3200, f1: 600, dur: 0.3, vol: 0.32, vib: 220 }); }
+  hurt() {   // the pigeon gets bitten: a squawk and a thump
+    this.chirp(null, null, { f0: 760, f1: 360, dur: 0.22, vol: 0.2, type: 'sawtooth', vib: 60, lp: 1800 });
+    this.burst(null, null, { dur: 0.1, type: 'lowpass', freq: 300, q: 0.7, vol: 0.4 });
+  }
+  splat(x, z) {
+    this.burst(x, z, { dur: 0.14, type: 'lowpass', freq: 800, q: 0.7, vol: 0.55, ref: 10 });
+    this.burst(x, z, { dur: 0.05, type: 'bandpass', freq: 1800, q: 1.2, vol: 0.3, ref: 10 });
+  }
+  plop() { this.chirp(null, null, { f0: 460, f1: 150, dur: 0.12, vol: 0.28, type: 'sine' }); }
+
+  /** A passer-by talking: a few vowel-like syllables from a sawtooth through two formant filters. */
+  chatter() {
+    if (!this.ready) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    const ang = Math.random() * Math.PI * 2, d = 3 + Math.random() * 20;
+    const s = this.shot(this.L.x + Math.cos(ang) * d, this.L.z + Math.sin(ang) * d, 7, 1);
+    if (!s) return;
+    const female = Math.random() < 0.45, k = female ? 1.14 : 1;
+    const f0 = female ? 185 + Math.random() * 70 : 92 + Math.random() * 40;
+    const V = [[800, 1200], [550, 1800], [320, 2300], [500, 900], [360, 750], [650, 1500]];
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    const fa = ctx.createBiquadFilter(), fb = ctx.createBiquadFilter();
+    fa.type = fb.type = 'bandpass'; fa.Q.value = 6; fb.Q.value = 7;
+    const ga = ctx.createGain(), gb = ctx.createGain(); ga.gain.value = 1; gb.gain.value = 0.55;
+    o.connect(fa); o.connect(fb); fa.connect(ga); fb.connect(gb); ga.connect(s.g); gb.connect(s.g);
+    const n = 3 + Math.floor(Math.random() * 6);
+    let t = 0, pitch = f0;
+    for (let i = 0; i < n; i++) {
+      const dur = 0.1 + Math.random() * 0.16, v = V[Math.floor(Math.random() * V.length)];
+      pitch = f0 * (0.9 + Math.random() * 0.25 - (i > n - 3 ? 0.08 : 0));
+      fa.frequency.setValueAtTime(v[0] * k, t0 + t); fb.frequency.setValueAtTime(v[1] * k, t0 + t);
+      o.frequency.setValueAtTime(pitch, t0 + t); o.frequency.linearRampToValueAtTime(pitch * (0.94 + Math.random() * 0.12), t0 + t + dur);
+      s.g.gain.setValueAtTime(0, t0 + t);
+      s.g.gain.linearRampToValueAtTime(0.3 * s.gain * (0.6 + Math.random() * 0.4), t0 + t + 0.03);
+      s.g.gain.linearRampToValueAtTime(0, t0 + t + dur);
+      t += dur + 0.02 + Math.random() * 0.05 + (Math.random() < 0.15 ? 0.18 : 0);
+    }
+    o.start(t0); o.stop(t0 + t + 0.05); s.end();
+  }
+
+  /** A horn somewhere down the avenue; sometimes a double tap or an angry burst. */
+  cityHonk() {
+    const ang = Math.random() * Math.PI * 2, d = 16 + Math.random() * 75;
+    const x = this.L.x + Math.cos(ang) * d, z = this.L.z + Math.sin(ang) * d;
+    const type = ['taxi', 'taxi', 'taxi', 'sedan', 'suv', 'van', 'bus'][Math.floor(Math.random() * 7)];
+    const r = Math.random();
+    const n = r < 0.12 ? 3 : r < 0.4 ? 2 : 1;
+    for (let i = 0; i < n; i++) setTimeout(() => this.honk(x, z, type, n === 3 ? 0.18 : n === 2 ? 0.2 : 0.35 + Math.random() * 0.6), i * (n === 3 ? 260 : 340));
+  }
+
+  jackhammer() {
+    const ang = Math.random() * Math.PI * 2, d = 35 + Math.random() * 55;
+    const x = this.L.x + Math.cos(ang) * d, z = this.L.z + Math.sin(ang) * d;
+    const n = 30 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < n; i++) setTimeout(() => {
+      this.burst(x, z, { dur: 0.05, type: 'bandpass', freq: 900 + Math.random() * 400, q: 1, vol: 0.5, ref: 18 });
+      this.burst(x, z, { dur: 0.04, type: 'lowpass', freq: 180, q: 0.8, vol: 0.5, ref: 18 });
+    }, i * (66 + Math.random() * 16));
+  }
+
+  busBrake() {
+    const ang = Math.random() * Math.PI * 2, d = 8 + Math.random() * 22;
+    this.burst(this.L.x + Math.cos(ang) * d, this.L.z + Math.sin(ang) * d, { dur: 0.8, type: 'highpass', freq: 3200, q: 0.5, vol: 0.5, ref: 12 });
   }
 
   /** Subway train sounds, driven by the station interior. */

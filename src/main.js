@@ -7,6 +7,7 @@ import { Player } from './player.js';
 import { Vehicles } from './vehicles.js';
 import { Interiors } from './interiors.js';
 import { AudioEngine } from './audio.js';
+import { Combat } from './rats.js';
 import { AVENUES, STREETS, N, roadCenter, PITCH, clamp } from './config.js';
 
 const params = new URLSearchParams(location.search);
@@ -61,7 +62,13 @@ const vehicles = new Vehicles(world, traffic, player, {
 });
 traffic.hooks.honk = (car) => { if (Math.abs(car.x - player.x) < 120 && Math.abs(car.z - player.z) < 120) audio.honk(car.x, car.z, car.type); };
 
-const outdoorObjs = [world.group, traffic.group, npcs.group, sky];
+const combat = new Combat(scene, world, player, {
+  audio,
+  damage: (n) => hurtPlayer(n),
+  crumbs: (n) => { setCrumbs(crumbs + n); },
+  alert: () => toast('Rats! Press F or click to throw a poop bomb', 3.5),
+});
+const outdoorObjs = [world.group, traffic.group, npcs.group, sky, combat.group];
 
 // ------------------------------------------------------------------ UI
 const $ = (id) => document.getElementById(id);
@@ -87,6 +94,7 @@ document.addEventListener('pointerlockchange', () => {
   }
 });
 $('mute').addEventListener('click', () => toggleMute());
+canvas.addEventListener('mousedown', (e) => { if (e.button === 0 && player.locked) fireBomb(); });
 function toggleMute() {
   const m = audio.toggleMute();
   $('mute').textContent = m ? 'Sound off' : 'Sound on';
@@ -126,6 +134,7 @@ if (isTouch) {
   $('jump').addEventListener('touchstart', (e) => { player.keys.Space = true; e.preventDefault(); }, { passive: false });
   $('jump').addEventListener('touchend', () => { player.keys.Space = false; });
   $('act').addEventListener('touchstart', (e) => { interact(); e.preventDefault(); }, { passive: false });
+  $('fire').addEventListener('touchstart', (e) => { fireBomb(); e.preventDefault(); }, { passive: false });
   $('horn').addEventListener('touchstart', (e) => { honk(); e.preventDefault(); }, { passive: false });
 }
 
@@ -141,6 +150,31 @@ let subwayId = 0;
 const FADE_MS = params.has('nofade') ? 0 : 260;
 
 function setCrumbs(n) { crumbs = n; crumbEl.textContent = `Crumbs ${n}`; }
+const hpFill = document.querySelector('#hp i'), hurtEl = $('hurt'), killsEl = $('kills');
+let hurtT = 0, dead = false;
+function hurtPlayer(n) {
+  if (dead || mode !== 'street') return;
+  combat.hp = Math.max(0, combat.hp - n); combat.sinceHit = 0;
+  audio.hurt(); hurtEl.style.opacity = 1; hurtT = 0.25;
+  if (combat.hp <= 0) dieAndRespawn();
+}
+function dieAndRespawn() {
+  dead = true;
+  toast('The rats got you! You wake up back where you started.', 3);
+  fade(() => {
+    player.teleport(world.spawn.x, world.spawn.z, world.spawn.yaw);
+    setCrumbs(Math.floor(crumbs / 2));
+    combat.heal(); combat.calm(); dead = false;
+  });
+  if (FADE_MS === 0) dead = false;
+}
+function fireBomb() {
+  if (mode !== 'street' || fading || dead) return;
+  const dx = -Math.sin(player.camYaw), dz = -Math.cos(player.camYaw);
+  if (combat.fire(dx, dz)) {
+    audio.plop(); player.yaw = Math.atan2(dx, dz); player.pigeon.startPeck();
+  }
+}
 setCrumbs(0);
 
 function setScene(m) {
@@ -173,6 +207,7 @@ function fade(cb) {
 }
 
 function enterInterior(it, from) {
+  combat.calm();
   current = it; ret = from;
   mode = it.type;
   setScene(mode);
@@ -297,6 +332,7 @@ function interact() {
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
   if (e.code === 'KeyE') interact();
+  else if (e.code === 'KeyF') fireBomb();
   else if (e.code === 'KeyH') honk();
   else if (e.code === 'KeyC') coo();
   else if (e.code === 'KeyM') toggleMute();
@@ -371,6 +407,7 @@ function update(dt) {
     traffic.update(dt, time, mode === 'driving' ? null : { x: player.x, y: player.y, z: player.z });
     npcs.update(dt, player);
     world.update(dt, player.x, player.z);
+    combat.update(dt, { active: true, hunted: mode === 'street' && !dead && !fading, car: mode === 'driving' ? { x: player.x, z: player.z, speed: Math.abs(vehicles.speed) } : null });
     // keep the shadow frustum on the player
     dir.position.set(player.x + sunDir.x * 160, sunDir.y * 160, player.z + sunDir.z * 160);
     dir.target.position.set(player.x, 0, player.z);
@@ -405,6 +442,10 @@ function update(dt) {
     S.busy = clamp(c / 16, 0, 1);
   }
   audio.update(dt, S);
+  hpFill.style.width = (100 * combat.hp / combat.maxHp).toFixed(1) + '%';
+  if (killsEl.dataset.k !== String(combat.kills)) { killsEl.dataset.k = combat.kills; killsEl.textContent = `Rats beaten ${combat.kills}`; }
+  if (hurtT > 0) { hurtT -= dt; if (hurtT <= 0) hurtEl.style.opacity = combat.hp < 35 ? 0.45 : 0; }
+  else if (combat.hp < 35 && hurtEl.style.opacity === '0') hurtEl.style.opacity = 0.45;
   updateHud(dt);
 }
 
@@ -420,7 +461,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, traffic, npcs, vehicles, interiors, audio, dir,
+  scene, camera, renderer, player, world, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };
