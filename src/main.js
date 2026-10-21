@@ -16,6 +16,8 @@ import { Missions } from './missions.js';
 import { Burglars } from './burglars.js';
 import { Cops } from './cops.js';
 import { MiniGames } from './minigames.js';
+import { makeHelpSign, bobSigns } from './helpsign.js';
+import { SHOP_JOBS } from './interiors.js';
 import { AVENUES, STREETS, N, roadCenter, PITCH, clamp } from './config.js';
 
 const params = new URLSearchParams(location.search);
@@ -232,6 +234,12 @@ function startJob(game) {
   });
 }
 
+// ---- HELP WANTED signs above every job spot
+const helpSigns = [];
+const helpGroup = new THREE.Group(); scene.add(helpGroup); outdoorObjs.push(helpGroup);
+for (const dr of world.shopDoors) if (SHOP_JOBS[dr.label]) { const m = makeHelpSign(2.2); m.position.set(dr.x + dr.nx * 0.6, 3.35, dr.z + dr.nz * 0.6); m.userData.y0 = 3.35; helpGroup.add(m); helpSigns.push(m); }
+for (const c of world.carts) if (c.game) { const m = makeHelpSign(1.9); m.position.set(c.x, 3.2, c.z); m.userData.y0 = 3.2; helpGroup.add(m); helpSigns.push(m); }
+
 // ---- pause
 let paused = false;
 function setPaused(on) {
@@ -358,7 +366,7 @@ function currentPrompt() {
     for (const dr of world.shopDoors) {
       if (Math.abs(dr.x - px) > 2.2 || Math.abs(dr.z - pz) > 2.2) continue;
       const d = Math.hypot(dr.x - px, dr.z - pz);
-      if (d < 2.0) consider(d, { id: 'shop', door: dr, text: `Enter ${dr.label.toLowerCase()}` });
+      if (d < 2.0) consider(d, { id: 'shop', door: dr, alt: SHOP_JOBS[dr.label]?.[0], text: `Enter ${dr.label.toLowerCase()}` + (SHOP_JOBS[dr.label] ? '   |   J: help wanted, work here' : '') });
     }
     for (const s of world.subways) {
       const d = Math.hypot(s.x - px, s.z - pz);
@@ -368,7 +376,7 @@ function currentPrompt() {
       const d = Math.hypot(c.x - px, c.z - pz);
       if (d < 2.8) {
         const ok = time >= (c.nextT ?? 0);
-        consider(d, { id: 'crumbs', cart: c, enabled: ok, alt: c.game, text: (ok ? 'Beg the vendor for crumbs' : 'The vendor is out of crumbs for now') + (c.game ? '   |   R: work the cart' : '') });
+        consider(d, { id: 'crumbs', cart: c, enabled: ok, alt: c.game, text: (ok ? 'Beg the vendor for crumbs' : 'The vendor is out of crumbs for now') + (c.game ? '   |   J: help wanted, work here' : '') });
       }
     }
     return best;
@@ -421,7 +429,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyH') honk();
   else if (e.code === 'KeyC') coo();
   else if (e.code === 'KeyM') toggleMute();
-  else if (e.code === 'KeyR') { const pr = currentPrompt(); if (pr && pr.alt && !paused) startJob(pr.alt); }
+  else if (e.code === 'KeyJ' || e.code === 'KeyR') { const pr = currentPrompt(); const game = pr && (pr.alt || (pr.id === 'job' && pr.game)); if (game && !paused && !wardrobe.active) startJob(game); }
   else if (e.code === 'KeyT') { if (!paused) missions.toggle(); }
   else if (e.code === 'KeyP') { if (paused) startPlay(); else if (overlay.classList.contains('hidden')) setPaused(true); }
   else if (e.code === 'Escape' && wardrobe.active) wardrobe.close();
@@ -504,6 +512,7 @@ function update(dt) {
     breakables.update(dt, player.x, player.z);
     burglars.update(dt, mode === 'street');
     cops.update(dt, mode);
+    bobSigns(helpSigns, time);
     fx.update(dt);
     combat.update(dt, { active: true, hunted: mode === 'street' && !dead && !fading, car: mode === 'driving' ? { x: player.x, z: player.z, speed: Math.abs(vehicles.speed) } : null });
     // keep the shadow frustum on the player

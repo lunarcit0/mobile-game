@@ -93,6 +93,7 @@ export class Vehicles {
     else if (this.traffic.vehicles.includes(car)) this.traffic.removeVehicle(car);
     this.releaseStatic(car);
     car.kind = car.kind || 'traffic';
+    car.mesh.matrixAutoUpdate = true;   // parked cars are frozen with the rest of the scenery; this one moves now
 
     this.d = { car, x: car.x, z: car.z, rot: car.mesh.rotation.y, speed: car.v || 0, steer: 0, crashT: 0 };
     this.traffic.obstacles.push(this.obs);

@@ -6,6 +6,7 @@ import { Pigeon } from './pigeon.js';
 import * as T from './textures.js';
 import { rng, rand, pick, clamp, angleLerp } from './config.js';
 import { boutiqueBuilder } from './boutique.js';
+import { makeHelpSign } from './helpsign.js';
 
 const GOODS = [0xd8433a, 0xe2a62b, 0x3a86d6, 0x4caf50, 0xf2f2f2, 0xe86fa5, 0x7e57c2, 0xff7a3d];
 const WOOD = 0x8a5a35, DWOOD = 0x4a2e1e, STEEL = 0xb9bec4, CREAM = 0xf3efe6;
@@ -421,6 +422,7 @@ export function buildShop(kind, ox) {
   for (let i = 0; i < nCust; i++) npcs.push(new RoomPigeon(R.group, { outfit: rng() < 0.4 ? 'suit' : 'casual', scale: 1.25 }, cfg.zone, null));
 
   const world = (x, z) => [ox + x, z];
+  if (SHOP_JOBS[label]) { const hs = makeHelpSign(2.2); hs.position.set(ox + clamp(cfg.crumbs[0] + 2.4, -6.5, 6.5), 2.3, cfg.crumbs[1]); R.group.add(hs); }
   return {
     id: `shop${kind}`, type: 'shop', kind, label,
     group: R.group,
@@ -435,7 +437,7 @@ export function buildShop(kind, ox) {
       { id: 'leave', x: ox, z: D / 2 - 0.9, r: 1.7, text: `Leave ${label.toLowerCase()}` },
       { id: 'crumbs', x: ox + cfg.crumbs[0], z: cfg.crumbs[1], r: 2.0, text: 'Ask for crumbs' },
       ...(cfg.wardrobe ? [{ id: 'wardrobe', x: ox + cfg.wardrobe.x, z: cfg.wardrobe.z, r: 2.2, text: 'Try on clothes' }] : []),
-      ...(SHOP_JOBS[label] ? [{ id: 'job', game: SHOP_JOBS[label][0], x: ox + clamp(cfg.crumbs[0] + 2.4, -6.5, 6.5), z: cfg.crumbs[1], r: 1.5, text: SHOP_JOBS[label][1] + '  (work for coins)' }] : []),
+      ...(SHOP_JOBS[label] ? [{ id: 'job', game: SHOP_JOBS[label][0], x: ox + clamp(cfg.crumbs[0] + 2.4, -6.5, 6.5), z: cfg.crumbs[1], r: 1.5, text: SHOP_JOBS[label][1] + '   |   J: help wanted, work here' }] : []),
     ],
     dynamicInteract: null,
     fog: null, background: 0x1a1612,
@@ -661,6 +663,7 @@ export function buildSubway(ox, hooks = {}) {
     return doorX;
   };
 
+  { const hs = makeHelpSign(2.4); hs.position.set(ox + 30.2, 2.4, 5.6); R.group.add(hs); }
   return {
     id: 'subway', type: 'subway', kind: -1, label: 'subway',
     group: R.group,
@@ -671,7 +674,7 @@ export function buildSubway(ox, hooks = {}) {
       camMaxY: H - 0.35,
     },
     spawn: { x: ox + 32.5, z: 5.2, yaw: -Math.PI / 2 },
-    interacts: [{ id: 'leave', x: ox + 34.6, z: 6.4, r: 3.0, text: 'Go up to the street' }, { id: 'job', game: 'subway', x: ox + 30.2, z: 5.6, r: 1.8, text: 'Play Subway Surfing (win coins)' }],
+    interacts: [{ id: 'leave', x: ox + 34.6, z: 6.4, r: 3.0, text: 'Go up to the street' }, { id: 'job', game: 'subway', x: ox + 30.2, z: 5.6, r: 1.8, text: 'Play Subway Surfing   |   J: help wanted, play here' }],
     dynamicInteract(px, pz) {
       const open = doors();
       if (!open || pz > 2.2) return null;
