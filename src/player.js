@@ -7,7 +7,8 @@ import { LIMIT, clamp, moveToward, angleLerp } from './config.js';
 
 const RADIUS = 0.32;
 const WALK = 4.2;
-const RUN = 9.5;
+const RUN = 11.5;
+const FLY = 17, FLY_FAST = 32, FLY_CEIL = 150;
 const GRAVITY = 20;
 const JUMP_V = 6.2;
 
@@ -33,6 +34,9 @@ export class Player {
     this.grounded = true;
     this.flapping = false;
     this.driving = false;             // true while the player is inside a car (pigeon hidden, car moves us)
+    this.flying = false;              // G toggles real flight outdoors
+    this.sprintLock = false;          // Z toggles auto-run
+    this.onToggle = null;             // (what, on) callback for the HUD
 
     this.camYaw = world.spawn.yaw + Math.PI;   // camera sits behind the pigeon
     this.camPitch = 0.28;
@@ -48,6 +52,10 @@ export class Player {
 
     addEventListener('keydown', (e) => {
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      if (!e.repeat) {
+        if (e.code === 'KeyG') this.toggleFly();
+        else if (e.code === 'KeyZ') { this.sprintLock = !this.sprintLock; this.onToggle?.('run', this.sprintLock); }
+      }
       this.keys[e.code] = true;
     });
     addEventListener('keyup', (e) => { this.keys[e.code] = false; });
@@ -66,7 +74,16 @@ export class Player {
 
   get active() { return this.locked || this.dragging; }
 
-  setContext(ctx) { this.ctx = ctx; }
+  setContext(ctx) { this.ctx = ctx; this.flying = false; }
+
+  toggleFly(force = null) {
+    if (this.driving || this.frozen || this.ctx !== this.outdoor) return;
+    const on = force ?? !this.flying;
+    if (on === this.flying) return;
+    this.flying = on;
+    if (on) { this.grounded = false; this.vy = Math.max(this.vy, 4); }
+    this.onToggle?.('fly', on);
+  }
 
   /** Put the pigeon somewhere (e.g. after a door or leaving a car) facing `yaw`, camera behind. */
   teleport(x, z, yaw, y = null) {
@@ -79,6 +96,7 @@ export class Player {
     this.speed = 0;
     this.camPitch = 0.28;
     this.camDist = 5.2;
+    this.flying = false;
     this.pigeon.root.position.set(x, this.y, z);
     this.pigeon.root.rotation.y = yaw;
     this.snapCamera();
@@ -136,8 +154,9 @@ export class Player {
     }
     const [f0, r0] = this.frozen ? [0, 0] : this.inputAxes();
     const f = f0, r = r0;
-    const sprint = !this.frozen && !!(this.keys.ShiftLeft || this.keys.ShiftRight);
-    const maxSpeed = (sprint ? RUN : WALK);
+    const shift = !this.frozen && !!(this.keys.ShiftLeft || this.keys.ShiftRight);
+    const sprint = shift !== this.sprintLock && !this.flying ? true : (this.flying ? shift : false);
+    const maxSpeed = this.flying ? (shift ? FLY_FAST : FLY) : (sprint ? RUN : WALK);
 
     // camera-relative movement
     const sy = Math.sin(this.camYaw), cy = Math.cos(this.camYaw);
@@ -145,7 +164,7 @@ export class Player {
     const rx = cy, rz = -sy;          // right
     let wx = fx * f + rx * r, wz = fz * f + rz * r;
     const wl = Math.hypot(wx, wz);
-    const accel = this.grounded ? 40 : 14;
+    const accel = this.flying ? 22 : this.grounded ? 40 : 14;
     if (wl > 0.01) {
       wx /= wl; wz /= wl;
       this.vx = moveToward(this.vx, wx * maxSpeed * Math.min(1, wl), accel * dt);
@@ -159,10 +178,16 @@ export class Player {
 
     // jump / flutter: tap to hop, hold in air to flap and slow the fall
     const jump = !this.frozen && this.keys.Space;
-    if (jump && this.grounded && !this.jumpHeld) { this.vy = JUMP_V; this.grounded = false; }
-    this.jumpHeld = !!jump;
-    this.flapping = false;
-    if (!this.grounded) {
+    if (this.flying) {
+      const up = jump, down = !this.frozen && (this.keys.KeyQ || this.keys.ControlLeft || this.keys.KeyX);
+      this.vy = moveToward(this.vy, up ? 10 : down ? -10 : 0, 36 * dt);
+      this.flapping = true;
+      this.grounded = false;
+      this.jumpHeld = !!jump;
+    } else if (jump && this.grounded && !this.jumpHeld) { this.vy = JUMP_V; this.grounded = false; }
+    if (!this.flying) this.jumpHeld = !!jump;
+    if (!this.flying) this.flapping = false;
+    if (!this.grounded && !this.flying) {
       this.vy -= GRAVITY * dt;
       if (jump && this.vy < 0) { this.vy = Math.max(this.vy, -2.2); this.flapping = true; this.vy += 14 * dt; }
     }
@@ -173,16 +198,22 @@ export class Player {
     this.collide();
 
     const gh = this.ctx.groundHeight(this.x, this.z);
-    if (this.y <= gh) { this.y = gh; this.vy = 0; this.grounded = true; }
-    else if (this.grounded && this.y - gh < 0.3) { this.y = gh; }
-    else this.grounded = false;
-    this.y = Math.min(this.y, 25);
+    if (this.flying) {
+      if (this.y <= gh + 0.02 && this.vy <= 0.1 && !jump) { this.y = gh; this.vy = 0; this.grounded = true; this.flying = false; this.onToggle?.('fly', false); }
+      else { this.y = Math.max(this.y, gh); this.grounded = false; }
+      this.y = Math.min(this.y, FLY_CEIL);
+    } else {
+      if (this.y <= gh) { this.y = gh; this.vy = 0; this.grounded = true; }
+      else if (this.grounded && this.y - gh < 0.3) { this.y = gh; }
+      else this.grounded = false;
+      this.y = Math.min(this.y, 25);
+    }
 
     this.speed = Math.hypot(this.vx, this.vz);
     const p = this.pigeon;
     p.root.position.set(this.x, this.y, this.z);
     p.root.rotation.y = this.yaw;
-    p.update(dt, this.speed * (sprint ? 0.8 : 1.0), { airborne: !this.grounded, vy: this.vy, flap: this.flapping });
+    p.update(dt, this.speed * (sprint ? 0.8 : 1.0), { airborne: !this.grounded, vy: this.flying ? this.vy * 0.4 - this.speed * 0.05 : this.vy, flap: this.flapping });
 
     this.updateCamera(dt);
   }
@@ -196,7 +227,7 @@ export class Player {
     const tx = this.x, ty = this.y + (this.driving ? 1.0 : 0.75), tz = this.z;
     const sy = Math.sin(this.camYaw), cy = Math.cos(this.camYaw);
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    let dist = this.camDist;
+    let dist = this.camDist + (this.flying ? 2.2 : 0);
     // pull the camera in if it would end up inside a building
     const c = this.ctx.colliders.boxes;
     let best = dist;

@@ -8,6 +8,14 @@ import { Vehicles } from './vehicles.js';
 import { Interiors } from './interiors.js';
 import { AudioEngine } from './audio.js';
 import { Combat } from './rats.js';
+import { Fx } from './fx.js';
+import { Breakables } from './breakables.js';
+import { save } from './save.js';
+import { Wardrobe } from './wardrobe.js';
+import { Missions } from './missions.js';
+import { Burglars } from './burglars.js';
+import { Cops } from './cops.js';
+import { MiniGames } from './minigames.js';
 import { AVENUES, STREETS, N, roadCenter, PITCH, clamp } from './config.js';
 
 const params = new URLSearchParams(location.search);
@@ -58,17 +66,26 @@ const player = new Player(scene, camera, world, canvas);
 const npcs = new NPCs(scene, 220);
 const interiors = new Interiors(scene, { train: (ev) => audio.train(ev) });
 const vehicles = new Vehicles(world, traffic, player, {
-  crash: (i) => audio.crash(i),
+  crash: (i) => { audio.crash(i); if (i > 0.25) missions.penalty('Collision', 5); },
+  entered: (car) => missions.carEntered(car),
+  bonk: (n) => { cops.crime('hit a pedestrian'); missions.penalty('Hit a pedestrian', 15 * n); save.data.stats.bonked += n; audio.bonk(); toast(n > 1 ? 'Bonk! Bonk! Watch the pedestrians!' : 'Bonk! Watch the pedestrians!', 1.6); },
+  wrecked: () => toast('Your car is wrecked! Park it and find another one.', 3),
 });
+const fx = new Fx(scene);
+const breakables = new Breakables(world, traffic, fx, { audio, onBreak: (e) => cops.crime('vandalism') || missions.penalty(e.kind === 'stop' ? 'Ran over a stop sign' : 'Knocked something over', 5) });
+vehicles.breakables = breakables; vehicles.npcs = npcs; vehicles.fx = fx; npcs.fx = fx;
+save.load();
+player.pigeon.setLook(save.data.look);
 traffic.hooks.honk = (car) => { if (Math.abs(car.x - player.x) < 120 && Math.abs(car.z - player.z) < 120) audio.honk(car.x, car.z, car.type); };
 
 const combat = new Combat(scene, world, player, {
   audio,
   damage: (n) => hurtPlayer(n),
   crumbs: (n) => { setCrumbs(crumbs + n); },
+  killed: () => { addCoins(3); save.data.stats.rats++; toast('Rat beaten!  +3 coins', 1.4); },
   alert: () => toast('Rats! Press F or click to throw a poop bomb', 3.5),
 });
-const outdoorObjs = [world.group, traffic.group, npcs.group, sky, combat.group];
+const outdoorObjs = [world.group, traffic.group, npcs.group, sky, combat.group, fx.group];
 
 // ------------------------------------------------------------------ UI
 const $ = (id) => document.getElementById(id);
@@ -81,6 +98,7 @@ const crumbEl = $('crumbs');
 const toastEl = $('toast');
 
 function startPlay() {
+  setPaused(false);
   overlay.classList.add('hidden');
   audio.start();
   if (!params.has('nolock')) canvas.requestPointerLock?.();
@@ -176,6 +194,71 @@ function fireBomb() {
   }
 }
 setCrumbs(0);
+
+// ---- coins
+const coinEl = $('coins');
+function setCoins(n) { save.data.coins = n; coinEl.textContent = `${n} coins`; save.write(); }
+function addCoins(n) { setCoins(save.data.coins + n); }
+setCoins(save.data.coins);
+
+const missions = new Missions({
+  scene, traffic, vehicles, player, toast: (m, s) => toast(m, s), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n),
+  getTime: () => time, stats: save.data.stats, onStats: () => save.write(),
+  hud: { box: $('mission'), text: $('mtext'), arrow: $('marrow') },
+});
+
+const burglars = new Burglars({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n) });
+combat.extraTargets = burglars.targets;
+outdoorObjs.push(burglars.group);
+const cops = new Cops({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), getCoins: () => save.data.coins, sfx: (n) => audio.sfx(n), speedOf: () => Math.abs(vehicles.speed) });
+outdoorObjs.push(cops.group);
+
+// ---- mini-games (jobs)
+const hexOf = (c, d = '#8a93a3') => (typeof c === 'number' ? '#' + c.toString(16).padStart(6, '0') : d);
+const mg = new MiniGames({ sfx: (n) => audio.sfx(n) });
+function syncLook() {
+  const l = save.data.look;
+  mg.setLook({ body: hexOf(l.body?.color), hat: l.hat?.type ?? 'none', glasses: !!l.face, scarf: l.neck ? hexOf(l.neck.color, '#d8312a') : null });
+}
+const GAME_NAMES = { pizza: 'Pizza', flowers: 'Flower shop', donuts: 'Donuts', deli: 'Deli', bike: 'Bike delivery', subway: 'Subway Surfing', hotdogs: 'Hot dogs', gyros: 'Gyros', bus: 'Bus' };
+function startJob(game) {
+  if (mg.active || !game) return;
+  syncLook(); document.exitPointerLock?.(); audio.sfx('click');
+  mg.start(game, (res) => {
+    if (res.coins > 0) { addCoins(res.coins); audio.sfx('coin'); }
+    save.data.stats.jobs++; save.write();
+    toast(res.coins > 0 ? `${GAME_NAMES[res.id] || 'Job'}: score ${res.score}.  +${res.coins} coins!` : 'Shift over, no coins this time', 3.5);
+    if (!params.has('nolock') && overlay.classList.contains('hidden')) canvas.requestPointerLock?.();
+  });
+}
+
+// ---- pause
+let paused = false;
+function setPaused(on) {
+  if (on === paused) return;
+  paused = on;
+  document.body.classList.toggle('paused', on);
+  if (on) {
+    overlay.classList.remove('hidden'); $('play').textContent = 'Resume'; $('ptitle').textContent = 'Paused';
+    document.exitPointerLock?.(); audio.ctx?.suspend?.();
+  } else {
+    $('ptitle').innerHTML = 'Pigeon <span>City</span>'; audio.ctx?.resume?.();
+  }
+}
+$('pause').addEventListener('click', () => setPaused(true));
+document.addEventListener('visibilitychange', () => { if (document.hidden && overlay.classList.contains('hidden') && !params.has('manual')) setPaused(true); });
+
+// ---- boutique wardrobe
+const wardrobe = new Wardrobe({
+  save, getCoins: () => save.data.coins, spend: (n) => setCoins(save.data.coins - n),
+  onLook: (look) => { player.pigeon.setLook(look); syncLook(); },
+  sfx: (n) => audio.sfx(n), toast: (m) => toast(m, 2),
+  onClose: () => { player.frozen = false; },
+});
+player.onToggle = (what, on) => {
+  if (what === 'fly') toast(on ? 'Flying! Space/Ctrl to rise & dip, Shift = faster, G to land' : 'Landed', 2.2);
+  else toast(on ? 'Auto-run on (Z to turn off)' : 'Auto-run off', 1.6);
+};
 
 function setScene(m) {
   const outdoor = m === 'street' || m === 'driving';
@@ -285,7 +368,7 @@ function currentPrompt() {
       const d = Math.hypot(c.x - px, c.z - pz);
       if (d < 2.8) {
         const ok = time >= (c.nextT ?? 0);
-        consider(d, { id: 'crumbs', cart: c, enabled: ok, text: ok ? 'Beg the vendor for crumbs' : 'The vendor is out of crumbs for now' });
+        consider(d, { id: 'crumbs', cart: c, enabled: ok, alt: c.game, text: (ok ? 'Beg the vendor for crumbs' : 'The vendor is out of crumbs for now') + (c.game ? '   |   R: work the cart' : '') });
       }
     }
     return best;
@@ -318,6 +401,8 @@ function interact() {
       break;
     }
     case 'board': rideTrain(); break;
+    case 'job': startJob(pr.game); break;
+    case 'wardrobe': player.frozen = true; document.exitPointerLock?.(); wardrobe.open(); break;
     case 'crumbs': {
       const n = 1 + Math.floor(Math.random() * 3);
       setCrumbs(crumbs + n); audio.pop(); toast(`+${n} crumb${n > 1 ? 's' : ''}!`, 1.5);
@@ -336,6 +421,10 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyH') honk();
   else if (e.code === 'KeyC') coo();
   else if (e.code === 'KeyM') toggleMute();
+  else if (e.code === 'KeyR') { const pr = currentPrompt(); if (pr && pr.alt && !paused) startJob(pr.alt); }
+  else if (e.code === 'KeyT') { if (!paused) missions.toggle(); }
+  else if (e.code === 'KeyP') { if (paused) startPlay(); else if (overlay.classList.contains('hidden')) setPaused(true); }
+  else if (e.code === 'Escape' && wardrobe.active) wardrobe.close();
 });
 
 function locationName(x, z) {
@@ -359,7 +448,10 @@ function updateHud(dt) {
   let loc;
   if (mode === 'shop') loc = current.label[0] + current.label.slice(1).toLowerCase();
   else if (mode === 'subway') loc = 'Subway station';
-  else loc = locationName(player.x, player.z);
+  else {
+    loc = locationName(player.x, player.z);
+    for (const L of world.landmarks) if (Math.abs(player.x - L.x) < L.size / 2 + 6 && Math.abs(player.z - L.z) < L.size / 2 + 6) loc = L.name;
+  }
   if (mode === 'driving') loc += '  -  driving';
   if (loc !== lastLoc) { locEl.textContent = loc; lastLoc = loc; }
 
@@ -399,14 +491,20 @@ let lastSteps = 0, flapT = 0, nearT = 0;
 const audioState = { lx: 0, lz: 0, lyaw: 0, mode: 'street', cars: [], busy: 0.5, cartD: 99, ventD: 99, subwayD: 99, nearNpc: null, drive: null };
 
 function update(dt) {
+  if (paused || mg.active) { updateHud(0); return; }
   const outdoor = mode === 'street' || mode === 'driving';
   if (outdoor) {
     time += dt;
     vehicles.update(dt, player.keys);
+    missions.update(dt, mode === 'driving');
     player.update(dt);
     traffic.update(dt, time, mode === 'driving' ? null : { x: player.x, y: player.y, z: player.z });
     npcs.update(dt, player);
     world.update(dt, player.x, player.z);
+    breakables.update(dt, player.x, player.z);
+    burglars.update(dt, mode === 'street');
+    cops.update(dt, mode);
+    fx.update(dt);
     combat.update(dt, { active: true, hunted: mode === 'street' && !dead && !fading, car: mode === 'driving' ? { x: player.x, z: player.z, speed: Math.abs(vehicles.speed) } : null });
     // keep the shadow frustum on the player
     dir.position.set(player.x + sunDir.x * 160, sunDir.y * 160, player.z + sunDir.z * 160);
@@ -461,7 +559,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
+  scene, camera, renderer, player, world, mg, startJob, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };

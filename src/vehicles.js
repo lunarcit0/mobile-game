@@ -15,7 +15,27 @@ export class Vehicles {
     this.abandoned = [];           // traffic cars the player left standing somewhere
     this.obs = { x: 0, z: 0, r: 2, v: 0 };
     this.input = { throttle: 0, slip: 0, handbrake: false };
+    this.breakables = null; this.npcs = null; this.fx = null;   // set by main.js
+    this.smokeT = 0;
   }
+
+  /** Handling per vehicle type (arcade): top speed, acceleration scale, steering scale. */
+  spec(car) { return { bus: { max: 17, acc: 0.62, steer: 0.72 }, van: { max: 20, acc: 0.8, steer: 0.88 } }[car.type] || { max: 23, acc: 1, steer: 1 }; }
+
+  damage(car, amount) {
+    car.hp = Math.max(0, (car.hp ?? 100) - amount);
+    this.paint(car);
+    if (car.hp <= 0 && !car.wrecked) { car.wrecked = true; this.hooks.wrecked?.(car); }
+  }
+  paint(car) {
+    const m = car.mesh.children[0]; if (!m) return;
+    if (!car.dmgMat) { car.dmgMat = true; m.material = m.material.clone(); }
+    const k = (car.hp ?? 100) / 100;
+    m.material.color.setScalar(0.42 + 0.58 * k);
+    car.mesh.scale.x = 1 - 0.1 * (1 - k);
+    car.mesh.scale.y = 1 - 0.05 * (1 - k);
+  }
+  repair(car) { car.hp = 100; car.wrecked = false; if (car.dmgMat) this.paint(car); }
 
   get active() { return !!this.d; }
   get car() { return this.d ? this.d.car : null; }
@@ -77,6 +97,7 @@ export class Vehicles {
     this.d = { car, x: car.x, z: car.z, rot: car.mesh.rotation.y, speed: car.v || 0, steer: 0, crashT: 0 };
     this.traffic.obstacles.push(this.obs);
     p.driving = true;
+    p.flying = false;
     p.pigeon.root.visible = false;
     p.camDist = 8.8; p.camPitch = 0.3;
     this.syncPlayer(true);
@@ -163,25 +184,39 @@ export class Vehicles {
 
     // longitudinal
     let a = 0;
-    if (tr > 0.05) a = (d.speed < -0.5 ? 20 : d.speed > 14 ? 5.5 : 9.5) * tr;
+    const sp0 = this.spec(car);
+    if (tr > 0.05) a = (d.speed < -0.5 ? 20 : d.speed > 14 ? 5.5 : 9.5) * tr * sp0.acc;
     else if (tr < -0.05) a = (d.speed > 0.5 ? -18 : -7) * -tr;
     const before = d.speed;
     d.speed += a * dt;
     if (Math.abs(tr) < 0.05) d.speed -= Math.sign(d.speed) * Math.min(Math.abs(d.speed), 2.8 * dt);
     if (hb) d.speed -= Math.sign(d.speed) * Math.min(Math.abs(d.speed), 26 * dt);
     if (before > 0 && tr < -0.05 && d.speed < 0 && before > 0.5) d.speed = Math.max(d.speed, 0);   // braking stops at 0 first
-    d.speed = clamp(d.speed, -7, 23);
+    d.speed = clamp(d.speed, -7, car.wrecked ? 5 : sp0.max);
 
     // steering
     d.steer += clamp(steerIn - d.steer, -7 * dt, 7 * dt);
     const sp = Math.abs(d.speed);
-    const yawRate = d.steer * 2.2 * (sp / (sp + 3.2)) / (1 + sp * 0.045) * (d.speed >= 0 ? 1 : -1) * (hb ? 1.6 : 1);
+    const yawRate = d.steer * 2.2 * sp0.steer * (sp / (sp + 3.2)) / (1 + sp * 0.045) * (d.speed >= 0 ? 1 : -1) * (hb ? 1.6 : 1);
     d.rot += yawRate * dt;
 
     const fx = Math.cos(d.rot), fz = -Math.sin(d.rot);
     d.x += fx * d.speed * dt;
     d.z += fz * d.speed * dt;
+    this.breakables?.collideCar(d, car);
+    if (this.npcs) {
+      const n = this.npcs.hitByCar(d.x, d.z, fx, fz, car.L, car.W, d.speed);
+      if (n) { this.hooks.bonk?.(n); d.speed *= 0.97; }
+    }
     this.collide(d, dt);
+    if ((car.hp ?? 100) < 65 && this.fx) {
+      this.smokeT -= dt;
+      if (this.smokeT <= 0) {
+        const bad = (car.hp ?? 100) < 30;
+        this.smokeT = bad ? 0.07 : 0.16;
+        this.fx.smoke(d.x + fx * car.L * 0.36, (car.type === 'bus' ? 1.5 : 1.0), d.z + fz * car.L * 0.36, bad ? 1 : 0, 1);
+      }
+    }
     d.x = clamp(d.x, -LIMIT, LIMIT); d.z = clamp(d.z, -LIMIT, LIMIT);
 
     this.input.throttle = tr;
@@ -254,7 +289,10 @@ export class Vehicles {
       if (into > 0.5) {
         const impact = into;
         d.speed -= Math.sign(d.speed) * Math.min(Math.abs(d.speed), impact * 0.8 + 1);
-        if (impact > 2.5 && d.crashT <= 0) { this.hooks.crash?.(impact / 14); d.crashT = 0.35; }
+        if (impact > 2.5 && d.crashT <= 0) {
+          this.hooks.crash?.(impact / 14); d.crashT = 0.35;
+          if (impact > 3.5) { this.damage(car, (impact - 2.5) * 3.2); this.fx?.sparks(d.x + fx * car.L * 0.45 * Math.sign(d.speed || 1), 0.7, d.z + fz * car.L * 0.45 * Math.sign(d.speed || 1), 8); }
+        }
       }
     }
   }
@@ -269,6 +307,7 @@ export class Vehicles {
       if (Math.hypot(car.x - p.x, car.z - p.z) < 60) continue;
       if (!this.traffic.canReinsert(car)) continue;
       this.releaseStatic(car);
+      this.repair(car);
       this.traffic.reinsert(car);
     }
   }

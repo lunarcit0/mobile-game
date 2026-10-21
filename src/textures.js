@@ -218,6 +218,7 @@ export const SHOPS = [
   { text: 'NOODLES',     bg: '#a8321c', fg: '#ffe9b0' },
   { text: 'GROCERY',     bg: '#2f6b2a', fg: '#fff7c2' },
   { text: 'BARBER',      bg: '#1d3557', fg: '#ffffff' },
+  { text: 'BOUTIQUE',    bg: '#7a2e8c', fg: '#ffffff' },
 ];
 
 const shopCache = new Map();

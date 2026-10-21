@@ -1,6 +1,9 @@
 // Fully synthesized audio (Web Audio): no sound files needed.
 // Start it from a user gesture (the Play button), then call update() every frame.
 import { clamp, lerp, rng, rand } from './config.js';
+import { CITY_B64 } from './cityloop.js';
+
+const MASTER = 0.55;
 
 const NUM_CAR_VOICES = 8;
 
@@ -27,7 +30,7 @@ export class AudioEngine {
     if (!AC) return;
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.85;
+    this.master.gain.value = this.muted ? 0 : MASTER;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
     this.analyser = ctx.createAnalyser();
@@ -56,11 +59,44 @@ export class AudioEngine {
     this.buildVoices();
     this.ready = true;
     ctx.resume?.();
+    this.startLoop();
+  }
+
+  /** The pre-rendered city bed: decoded once, then played as overlapping, cross-faded copies so it never has a seam. */
+  startLoop() {
+    const ctx = this.ctx;
+    this.bedLP = ctx.createBiquadFilter(); this.bedLP.type = 'lowpass'; this.bedLP.frequency.value = 20000;
+    this.bedGain = ctx.createGain(); this.bedGain.gain.value = 0;
+    this.bedLP.connect(this.bedGain); this.bedGain.connect(this.master);
+    const bin = atob(CITY_B64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const done = (buf) => { this.cityBuf = buf; this.loopNext = ctx.currentTime + 0.05; this.loopFirst = true; this.scheduleLoop(); this.loopTimer = setInterval(() => this.scheduleLoop(), 400); };
+    const p = ctx.decodeAudioData(bytes.buffer, done, () => {});
+    p?.catch?.(() => {});
+  }
+
+  scheduleLoop() {
+    const ctx = this.ctx, b = this.cityBuf; if (!b) return;
+    const XF = 3, TRIM = 0.06, dur = b.duration - TRIM * 2;
+    while (this.loopNext < ctx.currentTime + 2.5) {
+      const t = this.loopNext;
+      const src = ctx.createBufferSource(); src.buffer = b;
+      const g = ctx.createGain();
+      src.connect(g); g.connect(this.bedLP);
+      const up = new Float32Array(48), dn = new Float32Array(48);
+      for (let i = 0; i < 48; i++) { up[i] = Math.sin((i / 47) * Math.PI / 2); dn[i] = Math.cos((i / 47) * Math.PI / 2); }
+      if (this.loopFirst) { g.gain.setValueAtTime(1, t); this.loopFirst = false; }
+      else g.gain.setValueCurveAtTime(up, t, XF);
+      g.gain.setValueAtTime(1, t + XF + 0.001);
+      g.gain.setValueCurveAtTime(dn, t + dur - XF, XF);
+      src.start(t, TRIM, dur);
+      this.loopNext = t + dur - XF;
+    }
   }
 
   setMuted(m) {
     this.muted = m;
-    if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : 0.85, this.ctx.currentTime, 0.05);
+    if (this.ready) this.master.gain.setTargetAtTime(m ? 0 : MASTER, this.ctx.currentTime, 0.05);
   }
   toggleMute() { this.setMuted(!this.muted); return this.muted; }
 
@@ -111,21 +147,20 @@ export class AudioEngine {
       tunnel: this.layer(this.brown, 'lowpass', 130, 0.8),
       tunnelHiss: this.layer(this.white, 'bandpass', 1600, 0.5),
     };
-    // crowd murmur: four formant-ish bands whose levels jump together like syllables
-    this.babble = [[430, 0.034], [880, 0.04], [1550, 0.03], [2700, 0.015]].map(([f, base]) => {
-      const l = this.layer(this.white, 'bandpass', f, 2.2); l.base = base; l.f0 = f; return l;
-    });
     this.hum = this.ctx.createGain(); this.hum.gain.value = 0; this.hum.connect(this.master);
     this.humOsc = this.osc('sine', 60, this.hum);
     this.humOsc2 = this.osc('sine', 120, this.hum);
     // clipper/buzz for the barber shop, amplitude-modulated saw
     this.buzzGain = ctx.createGain(); this.buzzGain.gain.value = 0; this.buzzGain.connect(this.master);
+    // the oscillators run all the time, so they go through a gate (0..1 from an LFO) and then the level control
+    const gate = ctx.createGain(); gate.gain.value = 0.5; gate.connect(this.buzzGain);
     const bz = this.osc('sawtooth', 96); const bzf = ctx.createBiquadFilter(); bzf.type = 'lowpass'; bzf.frequency.value = 900;
-    bz.connect(bzf); bzf.connect(this.buzzGain);
+    bz.connect(bzf); bzf.connect(gate);
     const lfoG = ctx.createGain(); lfoG.gain.value = 0.5; const lfo = this.osc('square', 0.35);
-    lfo.connect(lfoG); lfoG.connect(this.buzzGain.gain);   // gates the buzz on/off a couple of times a second
+    lfo.connect(lfoG); lfoG.connect(gate.gain);
     // engine for the car the player drives
     this.engine = this.makeVoice();
+    this.engine.o1.type = 'triangle';
     this.skid = this.layer(this.white, 'bandpass', 1900, 6);
     this.bed.skid = this.skid;
   }
@@ -142,8 +177,13 @@ export class AudioEngine {
   }
 
   buildVoices() {
+    // nearby cars: soft filtered-noise rumble (tyres + engine), no oscillators, so there is no buzzing drone
     this.carVoices = [];
-    for (let i = 0; i < NUM_CAR_VOICES; i++) this.carVoices.push(this.makeVoice());
+    for (let i = 0; i < NUM_CAR_VOICES; i++) {
+      const ctx = this.ctx, l = this.layer(this.brown, 'lowpass', 300, 0.7);
+      const p = ctx.createStereoPanner(); l.gain.disconnect(); l.gain.connect(p); p.connect(this.master);
+      this.carVoices.push({ f: l.filter, g: l.gain, p });
+    }
   }
 
   /* ----------------------------------------------------------- spatial */
@@ -174,24 +214,17 @@ export class AudioEngine {
     // --- street bed (strength follows how busy the nearby traffic is)
     const busy = S.busy ?? 0.5;
     const driving = S.mode === 'driving';
-    sm(B.rumble.gain.gain, street ? 0.15 + 0.07 * busy : 0, 0.4);
-    sm(B.wash.gain.gain, street ? 0.035 + 0.04 * busy : 0, 0.4);
-    sm(B.hiss.gain.gain, street ? 0.004 : 0, 0.4);
+    sm(B.rumble.gain.gain, street ? 0.035 : 0, 0.4);
+    sm(B.wash.gain.gain, 0, 0.4);
+    sm(B.hiss.gain.gain, 0, 0.4);
+    if (this.bedGain) {
+      const driving_ = S.mode === 'driving';
+      sm(this.bedGain.gain, street ? (driving_ ? 2.4 : 3.8) : shop ? 1.4 : sub ? 1.0 : 0, 0.5);
+      sm(this.bedLP.frequency, street ? (driving_ ? 2200 : 20000) : shop ? 520 : sub ? 800 : 400, 0.4);
+    }
     sm(this.revSend.gain, street ? 0.4 : (sub ? 0.7 : 0.12), 0.5);
 
-    // --- crowd murmur (all bands share one syllable-rate envelope so it reads as voices, not static)
     const foodyRoom = shop && [0, 1, 2, 3, 5, 9, 10].includes(this.shopKind);
-    const crowdLvl = street ? (driving ? 0.4 : 1) * (0.7 + 0.5 * busy) : foodyRoom ? 0.5 : sub ? 0.35 : 0;
-    this.babT -= dt;
-    if (this.babT <= 0) {
-      this.babT = 0.1 + Math.random() * 0.2;
-      const syl = 0.3 + Math.random() * 0.9;
-      for (const l of this.babble) {
-        l.gain.gain.setTargetAtTime(l.base * crowdLvl * syl * (0.7 + Math.random() * 0.6), now, 0.07);
-        l.filter.frequency.setTargetAtTime(l.f0 * (0.78 + Math.random() * 0.5), now, 0.08);
-      }
-    }
-    B.wash.filter.frequency.setTargetAtTime(600 + 400 * Math.sin(this.t * 0.17) + 200 * busy, now, 0.5);
 
     // --- spot sounds that only exist on the street
     sm(B.sizzle.gain.gain, street ? 0.075 * clamp(1 - (S.cartD ?? 99) / 14, 0, 1) : 0);
@@ -213,11 +246,6 @@ export class AudioEngine {
     this.humOsc.frequency.setTargetAtTime(k === 4 ? 100 : 60, now, 0.1);
     this.buzzGain.gain.value = shop && k === 11 ? 0.02 : 0;   // barber clippers (an LFO gates it on and off)
 
-    if ((foodyRoom || sub) && !street) {
-      this.chatT -= dt;
-      if (this.chatT <= 0) { this.chatT = rand(1.2, 3.5); this.chatter(); }
-    }
-
     // --- subway station
     sm(B.tunnel.gain.gain, sub ? 0.3 : 0, 0.4);
     sm(B.tunnelHiss.gain.gain, sub ? 0.012 : 0, 0.4);
@@ -237,7 +265,7 @@ export class AudioEngine {
       this.engine.o1.frequency.setTargetAtTime(freq, now, 0.04);
       this.engine.o2.frequency.setTargetAtTime(freq * 0.5, now, 0.04);
       this.engine.f.frequency.setTargetAtTime(380 + rpm * 650 + (D.throttle > 0 ? 450 : 0), now, 0.06);
-      this.engine.g.gain.setTargetAtTime(0.12 + 0.06 * Math.abs(D.throttle) + 0.02 * rpm, now, 0.08);
+      this.engine.g.gain.setTargetAtTime(0.06 + 0.04 * Math.abs(D.throttle) + 0.015 * rpm, now, 0.08);
       sm(B.skid.gain.gain, D.slip > 0.5 ? 0.09 * clamp(D.slip - 0.5, 0, 1) * clamp(sp / 8, 0, 1) : 0, 0.05);
       // wind
       sm(B.wash.gain.gain, 0.05 + 0.1 * clamp(sp / 20, 0, 1), 0.2);
@@ -248,16 +276,6 @@ export class AudioEngine {
 
     // --- occasional far-away siren and ambient pigeon coos on the street
     if (street) {
-      this.sirenT -= dt;
-      if (this.sirenT <= 0) { this.siren(); this.sirenT = rand(28, 60); }
-      this.chatT -= dt;
-      if (this.chatT <= 0) { this.chatT = rand(0.3, 1.1); if (!driving || Math.random() < 0.4) this.chatter(); }
-      this.hornT -= dt;
-      if (this.hornT <= 0) { this.hornT = rand(1.2, 4.5) / (0.5 + busy); this.cityHonk(); }
-      this.jackT -= dt;
-      if (this.jackT <= 0) { this.jackT = rand(50, 110); this.jackhammer(); }
-      this.brakeT -= dt;
-      if (this.brakeT <= 0) { this.brakeT = rand(18, 45); this.busBrake(); }
       this.coT -= dt;
       if (this.coT <= 0 && S.nearNpc) { this.coo(S.nearNpc.x, S.nearNpc.z); this.coT = rand(6, 20); }
     }
@@ -284,12 +302,8 @@ export class AudioEngine {
       const c = e[1];
       const sp = this.spatial(c.x, c.z, 7);
       const heavy = c.type === 'bus' || c.type === 'van';
-      const base = heavy ? 26 : 34;
-      const f = base + c.v * (heavy ? 2.4 : 3.0) + Math.sin(this.t * 9 + i) * 0.6;
-      v.o1.frequency.setTargetAtTime(f, now, 0.1);
-      v.o2.frequency.setTargetAtTime(f * 0.5, now, 0.1);
-      v.f.frequency.setTargetAtTime(Math.min(sp.cutoff, 380 + c.v * 22), now, 0.1);
-      v.g.gain.setTargetAtTime(0.03 * sp.gain * (heavy ? 1.5 : 1) * (0.5 + Math.min(1, c.v / 6) * 0.5), now, 0.1);
+      v.f.frequency.setTargetAtTime(Math.min(sp.cutoff, (heavy ? 220 : 300) + c.v * 28), now, 0.1);
+      v.g.gain.setTargetAtTime(0.16 * sp.gain * (heavy ? 1.4 : 1) * Math.min(1, c.v / 8), now, 0.1);
       v.p.pan.setTargetAtTime(sp.pan, now, 0.1);
     }
   }
@@ -316,7 +330,7 @@ export class AudioEngine {
     const ctx = this.ctx, t = ctx.currentTime;
     if (x != null) {   // cap overlapping positional horns so a jam is busy, not a wall of noise
       this.honkLog = (this.honkLog || []).filter((h) => t - h < 1.5);
-      if (this.honkLog.length >= 3) return;
+      if (this.honkLog.length >= 2) return;
       this.honkLog.push(t);
     }
     const s = this.shot(x, z, 16, 0.9);
@@ -331,8 +345,8 @@ export class AudioEngine {
       o.start(t); o.stop(t + len + 0.1);
     }
     s.g.gain.setValueAtTime(0, t);
-    s.g.gain.linearRampToValueAtTime(0.16 * s.gain, t + 0.015);
-    s.g.gain.setValueAtTime(0.16 * s.gain, t + len);
+    s.g.gain.linearRampToValueAtTime(0.1 * s.gain, t + 0.015);
+    s.g.gain.setValueAtTime(0.1 * s.gain, t + len);
     s.g.gain.linearRampToValueAtTime(0, t + len + 0.05);
     s.end();
   }
@@ -454,6 +468,36 @@ export class AudioEngine {
     this.burst(x, z, { dur: 0.05, type: 'bandpass', freq: 1800, q: 1.2, vol: 0.3, ref: 10 });
   }
   plop() { this.chirp(null, null, { f0: 460, f1: 150, dur: 0.12, vol: 0.28, type: 'sine' }); }
+
+  clang(x, z, v = 1) {   // metal pole getting hit
+    this.chirp(x, z, { f0: 640, f1: 560, dur: 0.5, vol: 0.28 * v, type: 'square', lp: 2200, ref: 14 });
+    this.chirp(x, z, { f0: 990, f1: 900, dur: 0.35, vol: 0.18 * v, type: 'triangle', ref: 14 });
+    this.burst(x, z, { dur: 0.08, type: 'highpass', freq: 2500, q: 0.7, vol: 0.5 * v, ref: 14 });
+  }
+  splash(x, z) { this.burst(x, z, { dur: 0.5, type: 'bandpass', freq: 2800, q: 0.6, vol: 0.45, ref: 16 }); }
+  bonk() {   // cartoon "bonk" + squawk when a pigeon gets bumped
+    this.chirp(null, null, { f0: 420, f1: 110, dur: 0.2, vol: 0.34, type: 'sine' });
+    setTimeout(() => this.chirp(null, null, { f0: 1100, f1: 560, dur: 0.22, vol: 0.18, type: 'sawtooth', vib: 90, lp: 2400 }), 60);
+  }
+  coin() {
+    this.chirp(null, null, { f0: 988, f1: 988, dur: 0.07, vol: 0.2, type: 'square', lp: 4000 });
+    setTimeout(() => this.chirp(null, null, { f0: 1319, f1: 1319, dur: 0.22, vol: 0.2, type: 'square', lp: 4000 }), 70);
+  }
+  ding() { this.chirp(null, null, { f0: 1760, f1: 1760, dur: 0.5, vol: 0.2, type: 'sine' }); }
+  /** Sound effects used by the mini-games overlay. */
+  sfx(name) {
+    switch (name) {
+      case 'click': this.chirp(null, null, { f0: 700, f1: 520, dur: 0.05, vol: 0.14, type: 'square', lp: 3000 }); break;
+      case 'good': this.chirp(null, null, { f0: 660, f1: 990, dur: 0.12, vol: 0.2, type: 'triangle' }); break;
+      case 'bad': this.chirp(null, null, { f0: 220, f1: 130, dur: 0.22, vol: 0.22, type: 'sawtooth', lp: 1200 }); break;
+      case 'coin': this.coin(); break;
+      case 'tick': this.chirp(null, null, { f0: 880, f1: 880, dur: 0.08, vol: 0.16, type: 'square', lp: 3000 }); break;
+      case 'jump': this.chirp(null, null, { f0: 300, f1: 700, dur: 0.12, vol: 0.16, type: 'sine' }); break;
+      case 'win': [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.chirp(null, null, { f0: f, f1: f, dur: 0.18, vol: 0.2, type: 'triangle' }), i * 110)); break;
+      case 'lose': [392, 330, 262].forEach((f, i) => setTimeout(() => this.chirp(null, null, { f0: f, f1: f * 0.98, dur: 0.25, vol: 0.2, type: 'triangle' }), i * 160)); break;
+      default: break;
+    }
+  }
 
   /** A passer-by talking: a few vowel-like syllables from a sawtooth through two formant filters. */
   chatter() {

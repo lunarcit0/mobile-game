@@ -250,6 +250,10 @@ export class Combat {
           this.splat(r.x, r.y, r.z, 1.2); hit = true; break;
         }
       }
+      if (!hit && this.extraTargets) for (const t of this.extraTargets) {
+        const dx = t.x - m.x, dz = t.z - m.z;
+        if (dx * dx + dz * dz < 0.9 * 0.9 && Math.abs(m.y - (t.y + 0.4)) < 0.9) { t.hit(BOMB_DMG, b.vx, b.vz); this.splat(t.x, t.y, t.z, 1.2); hit = true; break; }
+      }
       const gy = this.world.groundHeight(m.x, m.z);
       if (!hit && m.y <= gy + 0.06) { this.splat(m.x, gy, m.z); hit = true; }
       if (!hit && (b.t > 3 || this.walls.some((w) => m.x > w.minX && m.x < w.maxX && m.z > w.minZ && m.z < w.maxZ && m.y < w.h))) {

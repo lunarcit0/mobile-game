@@ -1,4 +1,5 @@
 // Builds the static city: roads, sidewalks, buildings, shops, subway entrances, food trucks, props.
+import { buildCampus } from './campus.js';
 import * as THREE from 'three';
 import {
   N, R_EXT, BUILD, SIDEWALK, ROAD, SLAB, PITCH, HALF_CITY, PARK, SIDEWALK_H, FLOOR_H,
@@ -112,7 +113,7 @@ const TOWER = ['glassblue', 'glassdark', 'gray', 'white', 'limestone', 'glassblu
 
 export function buildCity(scene) {
   const colliders = { boxes: [], circles: [] };
-  const world = { colliders, subways: [], trucks: [], carts: [], vents: [], blocks: [], shopDoors: [], parked: [], vendors: [] };
+  const world = { colliders, subways: [], trucks: [], carts: [], vents: [], blocks: [], shopDoors: [], parked: [], vendors: [], signalPoles: [], landmarks: [] };
   const city = new THREE.Group();
   scene.add(city);
   world.group = city;
@@ -244,7 +245,8 @@ export function buildCity(scene) {
         const sw = len / nShops;
         for (let s = 0; s < nShops; s++) {
           const off = -len / 2 + sw * (s + 0.5);
-          const si = Math.floor(rng() * shopMats.length);
+          let si = Math.floor(rng() * 12);
+          if (world.shopDoors.length === 7) si = 12;   // one boutique, always the same door
           const shopMat = shopMats[si];
           const plane = new THREE.Mesh(shopPlane, shopMat);
           plane.scale.set(sw - 0.4, 3.3, 1);
@@ -274,6 +276,11 @@ export function buildCity(scene) {
       const cx = blockCenter(bi), cz = blockCenter(bj);
       const detail = bi >= 0 && bi < N && bj >= 0 && bj < N;
       const centerFactor = clamp(1 - Math.hypot(cx, cz) / (HALF_CITY * 1.2), 0, 1);
+      if (bi === 3 && bj === 2) {      // City College takes the whole block
+        const campus = buildCampus(cx, cz, { group: city, colliders });
+        world.landmarks.push({ name: campus.name, x: cx, z: cz, gate: campus.gate, size: campus.size });
+        continue;
+      }
       for (const lot of makeLots()) {
         const exposures = [];
         const w = lot.x1 - lot.x0, d = lot.z1 - lot.z0;
@@ -335,8 +342,9 @@ export function buildCity(scene) {
           if (free(bi, bj, s, o, 0.8)) {
             reserve(bi, bj, s, o, 0.8);
             const [x, z] = sidePos(cx, cz, side, 24.3, o);
-            lamps.push({ x, y: SIDEWALK_H, z, rot: yaw });
-            colliders.circles.push({ x, z, r: 0.22 });
+            const lc = { x, z, r: 0.22 };
+            lamps.push({ x, y: SIDEWALK_H, z, rot: yaw, c: lc });
+            colliders.circles.push(lc);
           }
         }
         const slots = [-18, -6.5, 6.5, 18].sort(() => rng() - 0.5).slice(0, 3);
@@ -354,8 +362,9 @@ export function buildCity(scene) {
           if (!free(bi, bj, s, o, half + 0.3)) continue;
           reserve(bi, bj, s, o, half + 0.3);
           const [x, z] = sidePos(cx, cz, side, 24.2, o);
-          list.push({ x, y: SIDEWALK_H, z, rot: yaw });
-          colliders.circles.push({ x, z, r: rad });
+          const pc = { x, z, r: rad };
+          list.push({ x, y: SIDEWALK_H, z, rot: yaw, c: pc });
+          colliders.circles.push(pc);
         }
       }
     }
@@ -363,18 +372,50 @@ export function buildCity(scene) {
 
   const lampPole = new THREE.CylinderGeometry(0.09, 0.13, 1, 8).translate(0, 0.5, 0);
   const lampMat = new THREE.MeshStandardMaterial({ color: 0x2a3430, roughness: 0.7 });
-  city.add(instanced(lampPole, lampMat, lamps.map((l) => ({ ...l, sy: 6.4 }))));
+  const lampPoleM = instanced(lampPole, lampMat, lamps.map((l) => ({ ...l, sy: 6.4 })));
+  city.add(lampPoleM);
   const lampHead = new THREE.BoxGeometry(0.4, 0.16, 1.2).translate(0, 0, 0.45);
-  city.add(instanced(lampHead, new THREE.MeshStandardMaterial({ color: 0xcfd6d2, roughness: 0.5 }), lamps.map((l) => ({ ...l, y: SIDEWALK_H + 6.4 }))));
+  const lampHeadM = instanced(lampHead, new THREE.MeshStandardMaterial({ color: 0xcfd6d2, roughness: 0.5 }), lamps.map((l) => ({ ...l, y: SIDEWALK_H + 6.4 })));
+  city.add(lampHeadM);
   const trunk = new THREE.CylinderGeometry(0.2, 0.28, 1, 7).translate(0, 0.5, 0);
   city.add(instanced(trunk, new THREE.MeshStandardMaterial({ color: 0x4a3626, roughness: 1 }), trees.map((t) => ({ ...t, sy: 3.4 }))));
   const canopy = new THREE.IcosahedronGeometry(2.4, 1);
   city.add(instanced(canopy, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }),
     trees.map((t) => ({ ...t, y: SIDEWALK_H + 4.9, sy: 0.85 * t.sy })), { colors: true }));
-  city.add(instanced(new THREE.CylinderGeometry(0.16, 0.2, 0.62, 8).translate(0, 0.31, 0), new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.6 }), hydrants));
-  city.add(instanced(new THREE.SphereGeometry(0.17, 8, 6).translate(0, 0.7, 0), new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.6 }), hydrants));
-  city.add(instanced(new THREE.CylinderGeometry(0.3, 0.26, 0.9, 10).translate(0, 0.45, 0), new THREE.MeshStandardMaterial({ color: 0x2f4a3a, roughness: 0.8 }), trash));
-  city.add(instanced(new THREE.BoxGeometry(0.55, 1.2, 0.62).translate(0, 0.6, 0), new THREE.MeshStandardMaterial({ color: 0x1f4e9c, roughness: 0.5 }), mail));
+  const hydA = instanced(new THREE.CylinderGeometry(0.16, 0.2, 0.62, 8).translate(0, 0.31, 0), new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.6 }), hydrants);
+  const hydB = instanced(new THREE.SphereGeometry(0.17, 8, 6).translate(0, 0.7, 0), new THREE.MeshStandardMaterial({ color: 0xc62828, roughness: 0.6 }), hydrants);
+  const trashM = instanced(new THREE.CylinderGeometry(0.3, 0.26, 0.9, 10).translate(0, 0.45, 0), new THREE.MeshStandardMaterial({ color: 0x2f4a3a, roughness: 0.8 }), trash);
+  const mailM = instanced(new THREE.BoxGeometry(0.55, 1.2, 0.62).translate(0, 0.6, 0), new THREE.MeshStandardMaterial({ color: 0x1f4e9c, roughness: 0.5 }), mail);
+  city.add(hydA, hydB, trashM, mailM);
+
+  // ---------------------------------------------------------------- stop signs
+  // Short-pole stop signs a few metres back from some intersection corners. Cars can knock them over.
+  const stops = [];
+  for (let iz = 0; iz <= N; iz++) for (let ix = 0; ix <= N; ix++) for (let c = 0; c < 4; c++) {
+    if ((ix * 7 + iz * 13 + c * 5) % 3 !== 0) continue;
+    const sx = c === 0 || c === 3 ? 1 : -1, sz = c < 2 ? -1 : 1;
+    const x = roadCenter(ix) + sx * 8.7, z = roadCenter(iz) + sz * 13.4;
+    const sc = { x, z, r: 0.13 };
+    colliders.circles.push(sc);
+    stops.push({ x, y: SIDEWALK_H, z, rot: sz > 0 ? 0 : Math.PI, c: sc, sz });
+  }
+  const stopTex = T.canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, 7); g.fill();
+    g.fillStyle = '#c4161c'; g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 7, 0, 7); g.fill();
+    g.fillStyle = '#ffffff'; g.font = 'bold 40px Arial Black, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', w / 2, h / 2 + 2);
+  }, { repeat: false });
+  const stopPoleM = instanced(new THREE.CylinderGeometry(0.035, 0.04, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x9aa0a6, roughness: 0.5, metalness: 0.4 }), stops.map((q) => ({ ...q, sy: 2.4 })));
+  const stopFaceGeo = new THREE.CircleGeometry(0.44, 8).rotateZ(Math.PI / 8);
+  const stopFaceM = instanced(stopFaceGeo, new THREE.MeshBasicMaterial({ map: stopTex, side: THREE.DoubleSide }), stops.map((q) => ({ ...q, y: SIDEWALK_H + 2.2, z: q.z + (q.sz > 0 ? 0.05 : -0.05) })));
+  city.add(stopPoleM, stopFaceM);
+
+  world.propSets = [
+    { kind: 'lamp', meshes: [lampPoleM, lampHeadM], items: lamps },
+    { kind: 'hydrant', meshes: [hydA, hydB], items: hydrants },
+    { kind: 'trash', meshes: [trashM], items: trash },
+    { kind: 'mail', meshes: [mailM], items: mail },
+    { kind: 'stop', meshes: [stopPoleM, stopFaceM], items: stops },
+  ];
 
   // -------------------------------------------------------- subway entrances
   const GREEN = 0x1f4a38;
@@ -431,7 +472,8 @@ export function buildCity(scene) {
   });
 
   // --------------------------------------------------------- hot dog carts
-  const cartSigns = ['HOT DOGS', 'HOT DOGS', 'PRETZELS', 'GYROS'].map((t) => T.cartSignTexture(t));
+  const cartTexts = ['HOT DOGS', 'HOT DOGS', 'PRETZELS', 'GYROS'];
+  const cartSigns = cartTexts.map((t) => T.cartSignTexture(t));
   const umbrellaTex = T.stripesTexture('#f3c623', '#d6291d');
   world.carts.forEach((c) => {
     const [x, z] = sidePos(c.cx, c.cz, c.side, 23.2, c.off);
@@ -444,10 +486,12 @@ export function buildCity(scene) {
       part(G.cyl, 0x222222, [0.55, 0.3, 0.45], [0.3, 0.08, 0.3], [0, 0, Math.PI / 2]),
       part(G.cyl, 0xe8e8e8, [0, 2.0, -0.2], [0.04, 1.2, 0.04]),
     ]), vcMaterial({ roughness: 0.5, metalness: 0.2 })));
+    const ci = Math.floor(rng() * cartTexts.length);
+    c.sign = cartTexts[ci]; c.game = c.sign === 'GYROS' ? 'gyros' : 'hotdogs';
     const um = new THREE.Mesh(new THREE.ConeGeometry(1.4, 0.55, 16, 1, true), new THREE.MeshStandardMaterial({ map: umbrellaTex, side: THREE.DoubleSide, roughness: 0.8 }));
     um.position.set(0, 2.55, -0.2);
     g.add(um);
-    const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshBasicMaterial({ map: pick(cartSigns) }));
+    const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.45), new THREE.MeshBasicMaterial({ map: cartSigns[ci] }));
     sg.position.set(0, 0.95, 0.41);
     g.add(sg);
     g.position.set(x, SIDEWALK_H, z);
@@ -575,6 +619,43 @@ export function buildCity(scene) {
     }
   }
 
+  // ------------------------------------------------ bus depot on the spawn street
+  {
+    const rc = roadCenter(2), bc = blockCenter(2);
+    const spots = [{ x: bc + 14, z: rc + PARK + 0.2, yaw: 0 }, { x: bc - 7, z: rc - PARK - 0.2, yaw: Math.PI }];
+    for (const sp of spots) {
+      const hl = 11.5 / 2 + 0.4, hw = 2.55 / 2 + 0.4;
+      for (let i = world.parked.length - 1; i >= 0; i--) {     // clear random parked cars out of the way
+        const q = world.parked[i];
+        if (Math.abs(q.x - sp.x) < hl + q.L / 2 && Math.abs(q.z - sp.z) < hw + q.W / 2) {
+          city.remove(q.mesh); const bi = colliders.boxes.indexOf(q.box); if (bi >= 0) colliders.boxes.splice(bi, 1); world.parked.splice(i, 1);
+        }
+      }
+      for (let i = colliders.boxes.length - 1; i >= 0; i--) {   // ...and any food truck there
+        const b = colliders.boxes[i];
+        if (b.h === 3.3 && b.maxX > sp.x - hl && b.minX < sp.x + hl && b.maxZ > sp.z - hw && b.minZ < sp.z + hw) colliders.boxes.splice(i, 1);
+      }
+      const bus = makeVehicle('bus', 0xf1f1ee);
+      bus.position.set(sp.x, 0.01, sp.z); bus.rotation.y = sp.yaw; city.add(bus);
+      const box = { minX: sp.x - 5.75, maxX: sp.x + 5.75, minZ: sp.z - 1.3, maxZ: sp.z + 1.3, h: 3.1 };
+      colliders.boxes.push(box);
+      world.parked.push({ mesh: bus, type: 'bus', L: bus.userData.L, W: bus.userData.W, x: sp.x, z: sp.z, rot: sp.yaw, box, kind: 'parked' });
+    }
+    const bsx = bc + 14, bsz = rc + 9.0;
+    const busStopTex = T.canvasTex(256, 128, (g, w, h) => {
+      g.fillStyle = '#1d4f91'; g.fillRect(0, 0, w, h); g.fillStyle = '#f2c200'; g.fillRect(0, 0, w, 10);
+      g.fillStyle = '#fff'; g.font = 'bold 54px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('BUS STOP', w / 2, h / 2 + 4);
+    }, { repeat: false });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.0, 6), new THREE.MeshStandardMaterial({ color: 0x8c9298, metalness: 0.4, roughness: 0.5 }));
+    pole.position.set(bsx, SIDEWALK_H + 1.5, bsz); city.add(pole);
+    for (const rot of [0, Math.PI]) {
+      const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: busStopTex }));
+      sg.position.set(bsx, SIDEWALK_H + 2.7, bsz + (rot ? -0.03 : 0.03)); sg.rotation.y = rot; city.add(sg);
+    }
+    colliders.circles.push({ x: bsx, z: bsz, r: 0.1 });
+    world.busDepot = { x: bc + 14, z: rc + PARK + 0.2 };
+  }
+
   // ----------------------------------------------- street-name blade signs
   for (let iz = 0; iz <= N; iz++) {
     for (let ix = 0; ix <= N; ix++) {
@@ -585,10 +666,10 @@ export function buildCity(scene) {
       const b = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.4), new THREE.MeshBasicMaterial({ map: T.bladeTexture(AVENUES[ix]), side: THREE.DoubleSide }));
       b.position.set(px + 0.9, SIDEWALK_H + 5.0, pz);
       city.add(a, b);
-      colliders.circles.push({ x: px, z: pz, r: 0.16 });
-      colliders.circles.push({ x: roadCenter(ix) - 8.7, z: roadCenter(iz) - 8.7, r: 0.16 });
-      colliders.circles.push({ x: roadCenter(ix) - 8.7, z: roadCenter(iz) + 8.7, r: 0.16 });
-      colliders.circles.push({ x: roadCenter(ix) + 8.7, z: roadCenter(iz) + 8.7, r: 0.16 });
+      const pcs = [{ x: px, z: pz, r: 0.16 }, { x: roadCenter(ix) - 8.7, z: roadCenter(iz) - 8.7, r: 0.16 },
+        { x: roadCenter(ix) - 8.7, z: roadCenter(iz) + 8.7, r: 0.16 }, { x: roadCenter(ix) + 8.7, z: roadCenter(iz) + 8.7, r: 0.16 }];
+      colliders.circles.push(...pcs);
+      world.signalPoles.push(...pcs.map((c, k) => ({ c, idx: (iz * (N + 1) + ix) * 4 + k, x: c.x, z: c.z, blades: k === 0 ? [a, b] : [] })));
     }
   }
 

@@ -23,7 +23,127 @@ const legGeo = merge([
 ]);
 const mat = vcMaterial({ roughness: 0.85 });
 
-function build(opts) {
+
+/* ---------------------------------------------------------------- wardrobe */
+
+function addHat(head, type, c = 0x222222) {
+  switch (type) {
+    case 'top':
+      head.push(part(G.cyl, 0x151515, [0, 0.25, 0.06], [0.07, 0.13, 0.07]));
+      head.push(part(G.cyl, 0x151515, [0, 0.185, 0.06], [0.135, 0.012, 0.135]));
+      head.push(part(G.cyl, c, [0, 0.2, 0.06], [0.0725, 0.02, 0.0725]));
+      break;
+    case 'cowboy':
+      head.push(part(G.hemi, c, [0, 0.185, 0.06], [0.078, 0.085, 0.078]));
+      head.push(part(G.cyl, c, [0, 0.18, 0.06], [0.175, 0.01, 0.175]));
+      head.push(part(G.cyl, 0x3a2414, [0, 0.19, 0.06], [0.08, 0.016, 0.08]));
+      break;
+    case 'crown':
+      head.push(part(G.cyl, 0xf2c230, [0, 0.2, 0.06], [0.085, 0.045, 0.085]));
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        head.push(part(G.cone, 0xf2c230, [Math.cos(a) * 0.078, 0.255, 0.06 + Math.sin(a) * 0.078], [0.02, 0.06, 0.02]));
+      }
+      head.push(part(G.sphere, 0xd8312a, [0, 0.205, 0.145], [0.014, 0.014, 0.014]));
+      break;
+    case 'grad':
+      head.push(part(G.hemi, 0x151515, [0, 0.172, 0.06], [0.092, 0.07, 0.092]));
+      head.push(part(G.box, 0x151515, [0, 0.222, 0.06], [0.215, 0.014, 0.215]));
+      head.push(part(G.sphere, 0xe0b32e, [0, 0.232, 0.06], [0.014, 0.014, 0.014]));
+      head.push(part(G.cyl, 0xe0b32e, [0.105, 0.2, 0.06], [0.005, 0.05, 0.005]));
+      head.push(part(G.sphere, 0xe0b32e, [0.105, 0.17, 0.06], [0.014, 0.018, 0.014]));
+      break;
+    case 'beanie':
+      head.push(part(G.hemi, c, [0, 0.17, 0.055], [0.1, 0.09, 0.1]));
+      head.push(part(G.torus, c, [0, 0.172, 0.055], [0.099, 0.099, 0.099], [Math.PI / 2, 0, 0]));
+      head.push(part(G.sphere, 0xffffff, [0, 0.265, 0.055], [0.026, 0.026, 0.026]));
+      break;
+    case 'cap':
+      head.push(part(G.hemi, c, [0, 0.17, 0.055], [0.1, 0.085, 0.1]));
+      head.push(part(G.box, c, [0, 0.165, 0.15], [0.12, 0.012, 0.09]));
+      break;
+    case 'chef':
+      head.push(part(G.cyl, 0xffffff, [0, 0.215, 0.062], [0.07, 0.09, 0.07]));
+      head.push(part(G.sphere, 0xffffff, [0, 0.285, 0.062], [0.098, 0.065, 0.098]));
+      break;
+    case 'party':
+      head.push(part(G.cone, c, [0, 0.27, 0.06], [0.055, 0.16, 0.055]));
+      head.push(part(G.sphere, 0xffffff, [0, 0.355, 0.06], [0.02, 0.02, 0.02]));
+      head.push(part(G.torus, 0xffffff, [0, 0.2, 0.06], [0.05, 0.05, 0.05], [Math.PI / 2, 0, 0]));
+      break;
+    case 'headphones':
+      head.push(part(G.arc, 0x202225, [0, 0.12, 0.06], [0.108, 0.108, 0.108]));
+      for (const sd of [-1, 1]) head.push(part(G.cyl, c, [sd * 0.105, 0.12, 0.06], [0.04, 0.03, 0.04], [0, 0, Math.PI / 2]));
+      break;
+    default: break;
+  }
+}
+
+function applyLook(look, pl, body, head, wingR, wingL) {
+  const sleeves = (c) => { for (const [arr, sd] of [[wingR, 1], [wingL, -1]]) arr.push(part(G.sphere, c, [sd * 0.03, -0.09, -0.1], [0.046, 0.125, 0.275])); };
+  const b = look.body;
+  if (b) {
+    const c = b.color ?? 0xd8433a;
+    switch (b.type) {
+      case 'hoodie':
+        body.push(part(G.sphere, c, [0, 0.11, -0.04], [0.222, 0.21, 0.31]));
+        body.push(part(G.sphere, c, [0, 0.2, -0.08], [0.1, 0.07, 0.1]));
+        body.push(part(G.box, 0x000000, [0, 0.03, 0.2], [0.12, 0.002, 0.003]));
+        sleeves(c); break;
+      case 'tee':
+        body.push(part(G.sphere, c, [0, 0.105, -0.03], [0.208, 0.2, 0.28]));
+        body.push(part(G.sphere, 0xffffff, [0, 0.105, 0.0], [0.212, 0.05, 0.285])); break;
+      case 'jersey':
+        body.push(part(G.sphere, c, [0, 0.105, -0.03], [0.214, 0.205, 0.29]));
+        body.push(part(G.box, 0xffffff, [0, 0.12, 0.2], [0.07, 0.1, 0.01], [-0.2, 0, 0]));
+        sleeves(c); break;
+      case 'aloha':
+        body.push(part(G.sphere, c, [0, 0.105, -0.03], [0.21, 0.2, 0.29]));
+        for (let i = 0; i < 9; i++) body.push(part(G.sphere, i % 2 ? 0xffe14d : 0xffffff, [Math.sin(i * 2.4) * 0.17, 0.1 + Math.cos(i * 1.7) * 0.07, 0.04 + (i % 3) * 0.08], [0.03, 0.03, 0.03])); break;
+      case 'suit': case 'tux': {
+        const jacket = b.type === 'tux' ? 0x15161a : c;
+        body.push(part(G.sphere, jacket, [0, 0.105, -0.06], [0.224, 0.212, 0.31]));
+        body.push(part(G.sphere, 0xf4f4f0, [0, 0.115, 0.15], [0.165, 0.175, 0.2]));
+        if (b.type === 'suit') body.push(part(G.box, 0xc0392b, [0, 0.1, 0.343], [0.036, 0.17, 0.014], [-0.18, 0, 0]));
+        for (const sx of [-1, 1]) body.push(part(G.box, jacket, [sx * 0.085, 0.14, 0.31], [0.07, 0.17, 0.02], [-0.25, sx * 0.3, sx * 0.25]));
+        sleeves(jacket); break;
+      }
+      default: break;
+    }
+  }
+  if (look.hat) addHat(head, look.hat.type, look.hat.color ?? 0xd8433a);
+  const f = look.face;
+  if (f) {
+    if (f.type === 'shades') head.push(part(G.box, 0x111111, [0, 0.14, 0.12], [0.17, 0.03, 0.02]));
+    else if (f.type === 'heart') { head.push(part(G.box, 0xff5fa8, [0, 0.14, 0.12], [0.17, 0.03, 0.02])); for (const sd of [-1, 1]) head.push(part(G.sphere, 0xff5fa8, [sd * 0.04, 0.14, 0.125], [0.03, 0.028, 0.012])); }
+    else if (f.type === 'monocle') { head.push(part(G.torus, 0xe0b32e, [0.052, 0.14, 0.13], [0.034, 0.034, 0.034])); }
+  }
+  const n = look.neck;
+  if (n) {
+    const c = n.color ?? 0xd8312a;
+    if (n.type === 'bandana') {
+      head.push(part(G.torus, c, [0, 0.0, 0.0], [0.118, 0.118, 0.118], [Math.PI / 2, 0, 0]));
+      head.push(part(G.box, c, [0, -0.03, 0.115], [0.07, 0.07, 0.01], [0.2, 0, Math.PI / 4]));
+    } else if (n.type === 'scarf') {
+      head.push(part(G.torus, c, [0, 0.0, 0.0], [0.122, 0.122, 0.122], [Math.PI / 2, 0, 0]));
+      head.push(part(G.box, c, [0.05, -0.1, 0.1], [0.04, 0.16, 0.012], [0.1, 0, 0.15]));
+    } else if (n.type === 'bowtie') {
+      for (const sd of [-1, 1]) head.push(part(G.cone, c, [sd * 0.03, -0.045, 0.108], [0.03, 0.045, 0.012], [0, 0, sd * Math.PI / 2]));
+      head.push(part(G.sphere, c, [0, -0.045, 0.108], [0.014, 0.014, 0.014]));
+    } else if (n.type === 'chain') {
+      head.push(part(G.torus, 0xf2c230, [0, -0.02, 0.0], [0.112, 0.112, 0.112], [Math.PI / 2, 0, 0]));
+      head.push(part(G.cyl, 0xf2c230, [0, -0.1, 0.1], [0.026, 0.008, 0.026], [Math.PI / 2, 0, 0]));
+    }
+  }
+  const k = look.back;
+  if (k) {
+    const c = k.color ?? 0xd8312a;
+    if (k.type === 'backpack') { body.push(part(G.box, c, [0, 0.13, -0.16], [0.14, 0.17, 0.08])); body.push(part(G.box, 0x222222, [0, 0.13, -0.2], [0.12, 0.05, 0.02])); }
+    else if (k.type === 'cape') { body.push(part(G.box, c, [0, 0.06, -0.26], [0.3, 0.03, 0.4], [0.5, 0, 0])); body.push(part(G.sphere, 0xf2c230, [0, 0.19, -0.02], [0.02, 0.02, 0.02])); }
+  }
+}
+
+function makeParts(opts) {
   const pl = PLUMAGE[opts.plumage % PLUMAGE.length];
   const body = [];
   const head = [];
@@ -32,7 +152,8 @@ function build(opts) {
 
   // --- torso (relative to hip pivot at y=0.36)
   body.push(part(G.sphere, pl.body, [0, 0.1, -0.02], [0.2, 0.2, 0.34]));
-  if (opts.outfit !== 'suit') body.push(part(G.sphere, pl.belly, [0, 0.11, 0.15], [0.185, 0.18, 0.2]));
+  const bt = opts.look && opts.look.body ? opts.look.body.type : null;
+  if (opts.outfit !== 'suit' && bt !== 'suit' && bt !== 'tux') body.push(part(G.sphere, pl.belly, [0, 0.11, 0.15], [0.185, 0.18, 0.2]));
   body.push(part(G.sphere, pl.body, [0, 0.07, -0.25], [0.13, 0.12, 0.14]));
   body.push(part(G.box, pl.tail, [0, 0.065, -0.42], [0.17, 0.025, 0.24], [-0.2, 0, 0]));
   body.push(part(G.box, pl.bar, [0, 0.055, -0.53], [0.17, 0.027, 0.05], [-0.2, 0, 0]));
@@ -68,7 +189,9 @@ function build(opts) {
 
   // --- outfits
   const outfit = opts.outfit;
-  if (outfit === 'suit') {
+  if (opts.look) {
+    applyLook(opts.look, pl, body, head, wingR, wingL);
+  } else if (outfit === 'suit') {
     const jacket = pick(SUIT_COLORS);
     body.push(part(G.sphere, jacket, [0, 0.105, -0.06], [0.224, 0.212, 0.31]));
     body.push(part(G.sphere, 0xf4f4f0, [0, 0.115, 0.15], [0.165, 0.175, 0.2]));              // white shirt front
@@ -106,7 +229,8 @@ function build(opts) {
       head.push(part(G.torus, c2, [0, 0.0, 0.0], [0.115, 0.115, 0.115], [Math.PI / 2, 0, 0]));
     }
     const h = rng();
-    if (h < 0.22) { // beanie
+    if (opts.hat === 'grad') addHat(head, 'grad', 0x151515);
+    else if (h < 0.22) { // beanie
       const bc = pick(CASUAL_COLORS);
       head.push(part(G.hemi, bc, [0, 0.17, 0.055], [0.1, 0.09, 0.1]));
       head.push(part(G.torus, bc, [0, 0.172, 0.055], [0.099, 0.099, 0.099], [Math.PI / 2, 0, 0]));
@@ -134,11 +258,16 @@ function build(opts) {
     head.push(part(G.cyl, 0xffffff, [0, 0.215, 0.062], [0.07, 0.09, 0.07]));                    // chef hat
     head.push(part(G.sphere, 0xffffff, [0, 0.285, 0.062], [0.098, 0.065, 0.098]));
   }
-  if (opts.bandana) {
+  if (opts.bandana && !opts.look) {
     head.push(part(G.torus, 0xd8312a, [0, 0.0, 0.0], [0.118, 0.118, 0.118], [Math.PI / 2, 0, 0]));
     head.push(part(G.box, 0xd8312a, [0, -0.03, 0.115], [0.07, 0.07, 0.01], [0.2, 0, Math.PI / 4]));
   }
 
+  return { body, head, wingR, wingL };
+}
+
+function build(opts) {
+  const { body, head, wingR, wingL } = makeParts(opts);
   const root = new THREE.Group();
   const upper = new THREE.Group();
   upper.position.set(0, 0.36, 0);
@@ -149,13 +278,15 @@ function build(opts) {
 
   const headG = new THREE.Group();
   headG.position.set(0, 0.24, 0.2);
-  headG.add(new THREE.Mesh(merge(head), mat));
+  const headMesh = new THREE.Mesh(merge(head), mat);
+  headG.add(headMesh);
   upper.add(headG);
 
   const wR = new THREE.Group(); wR.position.set(0.17, 0.2, -0.02);
   const wL = new THREE.Group(); wL.position.set(-0.17, 0.2, -0.02);
-  wR.add(new THREE.Mesh(merge(wingR), mat));
-  wL.add(new THREE.Mesh(merge(wingL), mat));
+  const wRMesh = new THREE.Mesh(merge(wingR), mat), wLMesh = new THREE.Mesh(merge(wingL), mat);
+  wR.add(wRMesh);
+  wL.add(wLMesh);
   upper.add(wR, wL);
 
   const legL = new THREE.Group(); legL.position.set(-0.08, 0.34, 0.02);
@@ -165,7 +296,7 @@ function build(opts) {
   root.add(legL, legR);
 
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
-  return { root, upper, head: headG, wR, wL, legL, legR, bodyMesh };
+  return { root, upper, head: headG, wR, wL, legL, legR, bodyMesh, headMesh, wRMesh, wLMesh };
 }
 
 export class Pigeon {
@@ -175,7 +306,10 @@ export class Pigeon {
       outfit: opts.outfit ?? 'bare',
       bandana: !!opts.bandana,
       apron: opts.apron,
+      hat: opts.hat,
+      look: opts.look,
     };
+    this.opts = o;
     Object.assign(this, build(o));
     this.outfit = o.outfit;
     this.phase = rng() * 6;
@@ -184,6 +318,16 @@ export class Pigeon {
     this.peckT = -1;     // timer for peck animation
     this.root.scale.setScalar(opts.scale ?? 1);
     this.lookSeed = rng() * 100;
+  }
+
+  /** Re-dress the pigeon (player wardrobe): rebuilds the merged meshes from a look description. */
+  setLook(look) {
+    this.opts.look = look;
+    const p = makeParts(this.opts);
+    this.bodyMesh.geometry.dispose(); this.bodyMesh.geometry = merge(p.body);
+    this.headMesh.geometry.dispose(); this.headMesh.geometry = merge(p.head);
+    this.wRMesh.geometry.dispose(); this.wRMesh.geometry = merge(p.wingR);
+    this.wLMesh.geometry.dispose(); this.wLMesh.geometry = merge(p.wingL);
   }
 
   startPeck() { if (this.peckT < 0) this.peckT = 0; }

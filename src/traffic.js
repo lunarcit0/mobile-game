@@ -132,6 +132,7 @@ export class Traffic {
     const mk = () => new THREE.InstancedMesh(lampGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), count);
     this.lampR = mk(); this.lampY = mk(); this.lampG = mk();
     for (const m of [poles, heads]) { m.castShadow = true; }
+    this.poleMesh = poles; this.headMesh = heads;
 
     const dummy = new THREE.Object3D();
     const lampM = new THREE.Matrix4();

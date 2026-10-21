@@ -5,6 +5,7 @@ import { G, part, merge, vcMaterial, unlitVC } from './gfx.js';
 import { Pigeon } from './pigeon.js';
 import * as T from './textures.js';
 import { rng, rand, pick, clamp, angleLerp } from './config.js';
+import { boutiqueBuilder } from './boutique.js';
 
 const GOODS = [0xd8433a, 0xe2a62b, 0x3a86d6, 0x4caf50, 0xf2f2f2, 0xe86fa5, 0x7e57c2, 0xff7a3d];
 const WOOD = 0x8a5a35, DWOOD = 0x4a2e1e, STEEL = 0xb9bec4, CREAM = 0xf3efe6;
@@ -315,7 +316,12 @@ const SHOP_BUILDERS = [
     R.colliders.circles.push({ x: R.ox - 7.0, z: 4.4, r: 0.2, h: 1.9 });
     return { floor: 'checker', wall: 0xdfe3e8, accent: 0x1d3557, neon: ['BARBER', '#9fc6ff'], keepers: [{ x0: -5.2, x1: -0.5, z: -2.7 }, { x0: 0.5, x1: 5.2, z: -2.7 }], zone: [-4.8, 5.5, 1.5, 3.8], crumbs: [0, -1.2], apron: 0x1d3557 };
   },
+  // 12 BOUTIQUE (clothes shop; see boutique.js)
+  boutiqueBuilder,
 ];
+
+// Which shops offer a job (mini-game) and what it is called.
+export const SHOP_JOBS = { DELI: ['deli', 'Work the deli register'], PIZZA: ['pizza', 'Make pizzas'], FLOWERS: ['flowers', 'Arrange bouquets'], CAFE: ['donuts', 'Make donuts'], NOODLES: ['bike', 'Deliver food by bike'], BAGELS: ['donuts', 'Bake and glaze'] };
 
 /* ==================================================================
    NPC pigeons inside rooms
@@ -428,6 +434,8 @@ export function buildShop(kind, ox) {
     interacts: [
       { id: 'leave', x: ox, z: D / 2 - 0.9, r: 1.7, text: `Leave ${label.toLowerCase()}` },
       { id: 'crumbs', x: ox + cfg.crumbs[0], z: cfg.crumbs[1], r: 2.0, text: 'Ask for crumbs' },
+      ...(cfg.wardrobe ? [{ id: 'wardrobe', x: ox + cfg.wardrobe.x, z: cfg.wardrobe.z, r: 2.2, text: 'Try on clothes' }] : []),
+      ...(SHOP_JOBS[label] ? [{ id: 'job', game: SHOP_JOBS[label][0], x: ox + clamp(cfg.crumbs[0] + 2.4, -6.5, 6.5), z: cfg.crumbs[1], r: 1.5, text: SHOP_JOBS[label][1] + '  (work for coins)' }] : []),
     ],
     dynamicInteract: null,
     fog: null, background: 0x1a1612,
@@ -663,7 +671,7 @@ export function buildSubway(ox, hooks = {}) {
       camMaxY: H - 0.35,
     },
     spawn: { x: ox + 32.5, z: 5.2, yaw: -Math.PI / 2 },
-    interacts: [{ id: 'leave', x: ox + 34.6, z: 6.4, r: 3.0, text: 'Go up to the street' }],
+    interacts: [{ id: 'leave', x: ox + 34.6, z: 6.4, r: 3.0, text: 'Go up to the street' }, { id: 'job', game: 'subway', x: ox + 30.2, z: 5.6, r: 1.8, text: 'Play Subway Surfing (win coins)' }],
     dynamicInteract(px, pz) {
       const open = doors();
       if (!open || pz > 2.2) return null;
@@ -689,7 +697,7 @@ export class Interiors {
     this.subway = null;
   }
   shop(kind) {
-    kind = ((kind % 12) + 12) % 12;
+    const N = SHOP_BUILDERS.length; kind = ((kind % N) + N) % N;
     if (!this.shops.has(kind)) {
       const it = buildShop(kind, 6000 + kind * 100);
       it.group.visible = false;
