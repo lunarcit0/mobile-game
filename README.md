@@ -15,10 +15,18 @@ texture and model is generated in code).
 See `host-example.html` for a complete page.
 
 ## Controls
-WASD / arrows walk or drive · Shift run · Space hop (hold to flutter) / handbrake · mouse look · **E** enter cars, shops and the subway / beg for crumbs · **F** / click throw a poop bomb (auto-aims at nearby rats) · **H** honk · **C** coo · **M** mute · Esc menu.
+WASD / arrows walk or drive · Shift run · Space hop (hold to flutter) / handbrake · mouse look · **E** enter cars, shops and the subway / beg for crumbs · **F** / click throw a poop bomb (auto-aims at nearby rats) · **H** honk · **C** coo · **M** mute · **G** fly (Space/Ctrl up and down, Shift faster) · **Z** run lock · **T** start a taxi or bus job · **P** pause · Esc menu.
 
 Things to do: hop into any parked car, taxi or traffic car and drive it; walk into any shop door or subway entrance; board a train to pop up at another station; beg hot dog vendors for crumbs.
 Touch devices get an on-screen joystick and hop button.
+
+## Coins, jobs and the boutique
+Earn coins, spend them on clothes at the BOUTIQUE (walk to the mirror, press E). Coins and outfits are saved in the browser.
+- **Driving jobs:** get in a taxi (fares, bonus for speed and a clean car) or a city bus (4 stops, score 100 minus infractions: red lights, speeding, collisions, pedestrians, stop signs) and press **T**.
+- **Rat bounty:** every rat you beat pays 3 coins. **Burglars:** masked pigeons rob shops; two poop bombs catch one for 25 coins.
+- **NYPD pigeons** patrol the sidewalks. Hit pedestrians or wreck street furniture near one and he chases you for a fine.
+- **Crashes:** cars dent and smoke, knock over stop signs, lamps, hydrants and bins, and bonk pedestrians.
+- **City College** is the campus block east of the start.
 
 ## Edit and rebuild
 ```
@@ -37,3 +45,6 @@ Then open `index.html` through any static server (e.g. `python3 -m http.server`)
 
 ## Rats
 Rats roam the sidewalks and crawl out of subway entrances. A rat that sees you (within ~26 m, no building in the way) chases and bites. They run faster than you walk but slower than you sprint; hop to dodge a bite. Two poop bombs kill a rat, a car runs them over, and every kill drops crumbs. If your health bar empties you wake up at the start and lose half your crumbs. Tunables are at the top of `src/rats.js`.
+
+## Sound
+The city ambience (crowd murmur, traffic passes, horns, sirens, construction) is a pre-rendered 48 s loop embedded in `src/cityloop.js` (base64 MP3) and cross-faded so it never has a seam. `tools/make_city_ambience.py` regenerates it (needs `numpy scipy espeakng-loader` and `ffmpeg`). Everything else (horns near traffic, coos, footsteps, engine, shop and subway ambience) is synthesized live in `src/audio.js`; master volume is `MASTER` at the top of that file.

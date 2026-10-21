@@ -20,6 +20,11 @@
   #prompt.dim { opacity:.6 !important; } #prompt.dim b { background:rgba(255,255,255,.25); color:#fff; }
   #crumbs { position:fixed; top:16px; right:16px; padding:8px 14px; border-radius:10px; background:var(--glass); backdrop-filter: blur(6px); font-weight:700; font-size:15px; pointer-events:none; }
   #crumbs::before { content:""; display:inline-block; width:10px; height:10px; border-radius:50%; background:#e8b86a; margin-right:9px; box-shadow:0 0 0 2px #b98a45 inset; }
+  #mission { position:fixed; top:130px; left:50%; transform:translateX(-50%); padding:8px 18px; border-radius:999px; background:rgba(18,22,28,.82); border:1px solid rgba(255,200,61,.6); font-weight:800; font-size:15px; pointer-events:none; white-space:nowrap; }
+  #marrow { display:inline-block; margin-right:10px; color:#ffd24a; font-size:18px; transition:transform .1s; }
+  #coins { position:fixed; top:16px; right:150px; padding:8px 14px; border-radius:10px; background:var(--glass); backdrop-filter: blur(6px); font-weight:800; font-size:15px; color:#ffd24a; pointer-events:none; }
+  #pause { position:fixed; top:100px; right:16px; font:inherit; font-size:13px; font-weight:600; color:var(--ink); padding:6px 12px; border-radius:10px; border:0; background:var(--glass); backdrop-filter: blur(6px); cursor:pointer; z-index:3; }
+  body.paused #pause { display:none; }
   #mute { position:fixed; top:60px; right:16px; font:inherit; font-size:13px; font-weight:600; color:var(--ink); padding:6px 12px; border-radius:10px; border:0; background:var(--glass); backdrop-filter: blur(6px); cursor:pointer; }
   #mute.off { opacity:.6; }
   #toast { position:fixed; top:84px; left:50%; transform:translateX(-50%); padding:8px 18px; border-radius:999px; background:rgba(18,22,28,.82); font-weight:700; opacity:0; transition:opacity .25s; pointer-events:none; }
@@ -60,12 +65,15 @@
 <canvas id="game" tabindex="0"></canvas>
 <div id="loc"></div>
 <div id="hint"></div>
-<div id="controls"><span><b>WASD</b>move</span><span><b>Shift</b>run</span><span><b>Space</b>hop / brake</span><span><b>E</b>enter / use</span><span><b>F</b>/<b>Click</b>poop bomb</span><span><b>H</b>honk</span><span><b>C</b>coo</span><span><b>M</b>mute</span><span><b>Esc</b>menu</span></div>
+<div id="controls"><span><b>WASD</b>move</span><span><b>Shift</b>run</span><span><b>Space</b>hop / brake</span><span><b>E</b>enter / use</span><span><b>F</b>/<b>Click</b>poop bomb</span><span><b>H</b>honk</span><span><b>C</b>coo</span><span><b>M</b>mute</span><span><b>G</b>fly</span><span><b>Z</b>run lock</span><span><b>T</b>taxi/bus job</span><span><b>R</b>work cart</span><span><b>P</b>pause</span><span><b>Esc</b>menu</span></div>
 <div id="prompt"></div>
 <div id="hp"><i></i></div>
 <div id="kills">Rats beaten 0</div>
 <div id="hurt"></div>
 <div id="crumbs">Crumbs 0</div>
+<div id="mission" style="display:none"><span id="marrow">&#9650;</span><span id="mtext"></span></div>
+<div id="coins">0 coins</div>
+<button id="pause" aria-label="Pause">&#10074;&#10074; Pause</button>
 <button id="mute">Sound on</button>
 <div id="toast"></div>
 <div id="fade"></div>
@@ -77,13 +85,13 @@
 <button id="fire">BOMB</button>
 <div id="overlay">
   <div class="card">
-    <h1>Pigeon <span>City</span></h1>
+    <h1 id="ptitle">Pigeon City</h1>
     <p class="sub">Strut through midtown. Hop into a taxi. Beg hot dog vendors for crumbs. Duck into shops and the subway. Watch out for the rats!</p>
     <button id="play">Play</button>
     <div class="keys">
       <div><b>W A S D</b>walk</div><div><b>Shift</b>run</div>
       <div><b>Space</b>hop (hold to flutter)</div><div><b>Mouse</b>look around</div>
-      <div><b>E</b>enter cars, shops, subway</div><div><b>F</b> / <b>Click</b> throw a poop bomb</div><div><b>H</b> honk &nbsp; <b>C</b> coo</div>
+      <div><b>E</b>enter cars, shops, subway</div><div><b>F</b> / <b>Click</b> throw a poop bomb</div><div><b>H</b> honk &nbsp; <b>C</b> coo</div><div><b>G</b> fly &nbsp; <b>Z</b> run lock</div><div><b>P</b> pause</div>
     </div>
   </div>
 </div>
