@@ -224,7 +224,7 @@ export class Player {
   }
 
   updateCamera(dt, snap = false) {
-    const tx = this.x, ty = this.y + (this.driving ? 1.0 : 0.75), tz = this.z;
+    const tx = this.x, ty = this.y + (this.driving ? (this.camLift ?? 1.0) : 0.75), tz = this.z;
     const sy = Math.sin(this.camYaw), cy = Math.cos(this.camYaw);
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
     let dist = this.camDist + (this.flying ? 2.2 : 0);

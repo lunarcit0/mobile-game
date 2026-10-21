@@ -98,9 +98,10 @@ export class Vehicles {
     this.d = { car, x: car.x, z: car.z, rot: car.mesh.rotation.y, speed: car.v || 0, steer: 0, crashT: 0 };
     this.traffic.obstacles.push(this.obs);
     p.driving = true;
+    this.camBase = Math.max(8.2, car.L * 0.62 + 5.6); p.camLift = car.type === 'bus' ? 2.4 : car.type === 'van' ? 1.5 : 1.0;   // big vehicles need the camera further back
     p.flying = false;
     p.pigeon.root.visible = false;
-    p.camDist = 8.8; p.camPitch = 0.3;
+    p.camDist = this.camBase + 0.6; p.camPitch = car.type === 'bus' ? 0.38 : 0.3;
     this.syncPlayer(true);
     p.camYaw = this.behindYaw();
     p.snapCamera();
@@ -147,7 +148,7 @@ export class Vehicles {
     const i = this.traffic.obstacles.indexOf(this.obs); if (i >= 0) this.traffic.obstacles.splice(i, 1);
 
     this.d = null;
-    p.driving = false;
+    p.driving = false; p.camLift = 1.0; p.camDist = 5.2;
     p.pigeon.root.visible = true;
     const yaw = Math.atan2(spot[0], spot[1]);
     p.teleport(d.x + spot[0], d.z + spot[1], yaw);
@@ -230,7 +231,7 @@ export class Vehicles {
     const idle = performance.now() - p.lastLook > 1500;
     if (idle && sp > 1.2) p.camYaw = angleLerp(p.camYaw, this.behindYaw(), Math.min(1, dt * (d.speed >= 0 ? 2.4 : 0.8)));
     if (idle) p.camPitch += (0.3 - p.camPitch) * Math.min(1, dt * 1.5);
-    p.camDist = 8.2 + sp * 0.12;
+    p.camDist = (this.camBase || 8.2) + sp * 0.12;
   }
 
   collide(d, dt) {
