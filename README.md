@@ -1,7 +1,3 @@
-
-
-https://github.com/user-attachments/assets/a55ba1d5-7196-41cf-a27d-e99c65ab49b0
-
 # Pigeon City
 
 A 3D browser game: you are a pigeon in a Midtown-Manhattan-style city. Walk the avenues, dodge taxis,
@@ -60,3 +56,6 @@ The city ambience (crowd murmur, traffic passes, horns, sirens, construction) is
 
 ## Mini-map
 Top-left map rotates with the camera. Red dashed line = route to the bus depot; red $ = Rat Corp stashes (revealed as you walk near them, remembered in the save; edge arrow points to the nearest); yellow diamonds = job/story goals. Press N or tap the map for a big north-up map.
+
+## Banter
+Sidewalk pigeons mutter jokes in speech bubbles, your pigeon quips after beating rats, and the car radio rants while you drive (src/barks.js — add your own lines to the WALK, QUIP and RADIO lists).
