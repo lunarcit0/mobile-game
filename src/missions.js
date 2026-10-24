@@ -75,11 +75,12 @@ export class Missions {
   }
 
   end(ok, msg, coins = 0) {
+    const kind = this.m && this.m.kind;
     this.beacon.visible = false; this.m = null;
     this.o.hud.box.style.display = 'none';
     if (coins > 0) { this.o.coins(coins); this.o.sfx('coin'); }
     this.o.toast(msg + (coins > 0 ? `   +${coins} coins` : ''), 4);
-    if (ok) this.o.onStats?.('job');
+    if (ok) this.o.onStats?.('job', kind);
   }
 
   update(dt, driving) {

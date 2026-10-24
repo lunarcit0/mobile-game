@@ -17,6 +17,7 @@ import { Missions } from './missions.js';
 import { Burglars } from './burglars.js';
 import { Cops } from './cops.js';
 import { Quest } from './quest.js';
+import { Story } from './story.js';
 import { MiniGames } from './minigames.js';
 import { makeHelpSign, bobSigns } from './helpsign.js';
 import { SHOP_JOBS } from './interiors.js';
@@ -223,6 +224,8 @@ combat.extraTargets = burglars.targets;
 outdoorObjs.push(burglars.group);
 const quest = new Quest({ scene, world, player, combat, fx, audio, save, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), targets: burglars.targets, onWin: () => {} });
 outdoorObjs.push(quest.group);
+const story = new Story({ scene, world, player, save, burglars, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), crumbs: (n) => setCrumbs(crumbs + n), getMode: () => mode });
+outdoorObjs.push(story.group);
 const cops = new Cops({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), getCoins: () => save.data.coins, sfx: (n) => audio.sfx(n), speedOf: () => Math.abs(vehicles.speed) });
 outdoorObjs.push(cops.group);
 
@@ -239,7 +242,7 @@ function startJob(game) {
   syncLook(); document.exitPointerLock?.(); audio.sfx('click');
   mg.start(game, (res) => {
     if (res.coins > 0) { addCoins(res.coins); audio.sfx('coin'); }
-    save.data.stats.jobs++; save.write();
+    save.data.stats.jobs++; save.write(); story.onMinigame(res);
     toast(res.coins > 0 ? `${GAME_NAMES[res.id] || 'Job'}: score ${res.score}.  +${res.coins} coins!` : 'Shift over, no coins this time', 3.5);
     if (!params.has('nolock') && overlay.classList.contains('hidden')) canvas.requestPointerLock?.();
   });
@@ -383,6 +386,12 @@ function currentPrompt() {
       const d = Math.hypot(s.x - px, s.z - pz);
       if (d < 3.6) consider(d - 1.5, { id: 'subway', sw: s, text: 'Take the stairs down to the subway' });
     }
+    const sn = story.npcNear(px, pz);
+    if (sn) consider(Math.hypot(sn.x - px, sn.z - pz) - 1.2, { id: 'talk', npc: sn, text: `Talk to ${sn.c.name}` });
+    const rs = story.rosaNear(px, pz);
+    if (rs) consider(Math.hypot(rs.x - px, rs.z - pz) - 2.5, { id: 'rosa', text: 'Talk to Rosa (deliver the package)' });
+    const cn = npcs.nearest(px, pz, 2.2);
+    if (cn && !sn && !rs) consider(Math.hypot(cn.x - px, cn.z - pz) + 0.4, { id: 'chat', text: 'Chat with the pigeon' });
     for (const c of world.carts) {
       const d = Math.hypot(c.x - px, c.z - pz);
       if (d < 2.8) {
@@ -409,6 +418,7 @@ function workHere() {
 }
 
 function interact() {
+  if (story.talking) { story.advance(); return; }
   const pr = currentPrompt();
   if (!pr || !pr.enabled) return;
   switch (pr.id) {
@@ -426,6 +436,9 @@ function interact() {
     }
     case 'board': rideTrain(); break;
     case 'job': startJob(pr.game); break;
+    case 'talk': story.talk(pr.npc); break;
+    case 'rosa': story.talkRosa(); break;
+    case 'chat': story.chatter(); break;
     case 'wardrobe': player.frozen = true; document.exitPointerLock?.(); wardrobe.open(); break;
     case 'crumbs': {
       const n = 1 + Math.floor(Math.random() * 3);
@@ -537,6 +550,7 @@ function update(dt) {
     breakables.update(dt, player.x, player.z);
     burglars.update(dt, mode === 'street');
     cops.update(dt, mode);
+    story.update(dt, true);
     quest.update(dt, mode === 'street');
     bobSigns(helpSigns, time);
     fx.update(dt);
@@ -595,7 +609,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, mg, startJob, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
+  scene, camera, renderer, player, world, mg, startJob, story, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };
