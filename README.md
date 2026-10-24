@@ -31,6 +31,8 @@ Earn coins, spend them on clothes at the BOUTIQUE (walk to the mirror, press E).
 ## Story pigeons
 Pigeons with a yellow `!` over their head give GTA-style missions: Big Tony (a delivery for Rosa), Detective Dolores (catch the burglar), Professor Pidge (lost textbooks at City College), Gina (taxi fares) and Chef Marco (pizza shift). One mission at a time; press E to talk. Any other pigeon will chat if you press E near it. The main goal: wreck the five Rat Corp stashes and beat the Rat Tycoon.
 
+Near some boutiques stand **snobby billionaire rats** (green $ over their heads). They will talk to you, but only because it amuses them, and they are condescending about it. They never attack, and they leak useful hints (a nearby Rat Corp stash, the Tycoon's weakness) without meaning to.
+
 ## Edit and rebuild
 ```
 npm install
@@ -51,3 +53,6 @@ Rats roam the sidewalks and crawl out of subway entrances. A rat that sees you (
 
 ## Sound
 The city ambience (crowd murmur, traffic passes, horns, sirens, construction) is a pre-rendered 48 s loop embedded in `src/cityloop.js` (base64 MP3) and cross-faded so it never has a seam. `tools/make_city_ambience.py` regenerates it (needs `numpy scipy espeakng-loader` and `ffmpeg`). Everything else (horns near traffic, coos, footsteps, engine, shop and subway ambience) is synthesized live in `src/audio.js`; master volume is `MASTER` at the top of that file.
+
+## Mini-map
+Top-left map rotates with the camera. Red dashed line = route to the bus depot; red $ = Rat Corp stashes (revealed as you walk near them, remembered in the save; edge arrow points to the nearest); yellow diamonds = job/story goals. Press N or tap the map for a big north-up map.
