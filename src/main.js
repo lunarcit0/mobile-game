@@ -19,6 +19,7 @@ import { Cops } from './cops.js';
 import { Quest } from './quest.js';
 import { Story } from './story.js';
 import { Minimap } from './minimap.js';
+import { Barks } from './barks.js';
 import { MiniGames } from './minigames.js';
 import { makeHelpSign, bobSigns } from './helpsign.js';
 import { SHOP_JOBS } from './interiors.js';
@@ -90,7 +91,7 @@ const combat = new Combat(scene, world, player, {
   audio,
   damage: (n) => hurtPlayer(n),
   crumbs: (n) => { setCrumbs(crumbs + n); },
-  killed: (r) => { quest.onKilled(r); if (r.king) return; addCoins(3); save.data.stats.rats++; toast('Rat beaten!  +3 coins', 1.4); },
+  killed: (r) => { quest.onKilled(r); if (r.king) return; addCoins(3); save.data.stats.rats++; toast('Rat beaten!  +3 coins', 1.4); if (Math.random() < 0.55) barks.quip(); },
   alert: () => toast('Billionaire rats! Press F or click to throw a poop bomb', 3.5),
 });
 const outdoorObjs = [skyline.group, world.group, traffic.group, npcs.group, sky, combat.group, fx.group];
@@ -231,6 +232,7 @@ const quest = new Quest({ scene, world, player, combat, fx, audio, save, toast: 
 outdoorObjs.push(quest.group);
 const story = new Story({ scene, world, player, save, burglars, combat, quest, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), crumbs: (n) => setCrumbs(crumbs + n), getMode: () => mode, onClose: () => relock() });
 outdoorObjs.push(story.group);
+const barks = new Barks({ camera, npcs, player, vehicles, getMode: () => mode });
 const minimap = new Minimap({ world, player, quest, missions, story, save, getMode: () => mode });
 const cops = new Cops({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), getCoins: () => save.data.coins, sfx: (n) => audio.sfx(n), speedOf: () => Math.abs(vehicles.speed) });
 outdoorObjs.push(cops.group);
@@ -559,6 +561,7 @@ function update(dt) {
     cops.update(dt, mode);
     story.update(dt, true);
     minimap.update(dt);
+    barks.update(dt);
     quest.update(dt, mode === 'street');
     bobSigns(helpSigns, time);
     fx.update(dt);
@@ -617,7 +620,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, mg, startJob, minimap, story, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
+  scene, camera, renderer, player, world, mg, startJob, minimap, barks, story, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };

@@ -16,8 +16,18 @@ export class Player {
   constructor(scene, camera, world, dom) {
     this.world = world;
     this.camera = camera;
-    this.pigeon = new Pigeon({ plumage: 0, outfit: 'bare', bandana: true, scale: 1.25 });
+    const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    this.camZoom = touch ? 0.82 : 1;                       // phones: camera a little closer
+    this.pigeon = new Pigeon({ plumage: 0, outfit: 'bare', bandana: true, scale: touch ? 1.6 : 1.25 });
     scene.add(this.pigeon.root);
+    // Find-me marks: a glowing ground ring and a bobbing arrow above the hero so it never gets lost in a flock.
+    const inv = 1 / (touch ? 1.6 : 1.25);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x4fd1ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 40), ringMat);
+    this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.08 * inv; this.ring.scale.setScalar(1);
+    this.arrow = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.22, 4), new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true, opacity: 0.95 }));
+    this.arrow.rotation.x = Math.PI; this.arrow.renderOrder = 999; this.arrowBase = 1.45;
+    this.pigeon.root.add(this.ring, this.arrow);
 
     this.outdoor = {
       colliders: world.colliders,
@@ -215,6 +225,8 @@ export class Player {
     p.root.rotation.y = this.yaw;
     p.update(dt, this.speed * (sprint ? 0.8 : 1.0), { airborne: !this.grounded, vy: this.flying ? this.vy * 0.4 - this.speed * 0.05 : this.vy, flap: this.flapping });
 
+    this.arrow.position.y = this.arrowBase + Math.sin(performance.now() / 220) * 0.07;
+    this.ring.material.opacity = 0.6 + 0.25 * Math.sin(performance.now() / 300);
     this.updateCamera(dt);
   }
 
@@ -227,7 +239,7 @@ export class Player {
     const tx = this.x, ty = this.y + (this.driving ? (this.camLift ?? 1.0) : 0.75), tz = this.z;
     const sy = Math.sin(this.camYaw), cy = Math.cos(this.camYaw);
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    let dist = this.camDist + (this.flying ? 2.2 : 0);
+    let dist = (this.camDist + (this.flying ? 2.2 : 0)) * (this.driving ? 1 : this.camZoom);
     // pull the camera in if it would end up inside a building
     const c = this.ctx.colliders.boxes;
     let best = dist;
