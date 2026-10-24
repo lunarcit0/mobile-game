@@ -69,6 +69,39 @@ const CAST = [
   },
 ];
 
+/* Snobby billionaire rats: they will talk to you, but only because it amuses them. */
+const compass = (dx, dz) => { const a = Math.atan2(dx, -dz) * 180 / Math.PI; return ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(((a + 360) % 360) / 45) % 8]; };
+const SNOBS = [
+  { id: 'chadwick', short: 'Chadwick', name: 'Chadwick Sterling-Squeak III',
+    open: ['Oh. A pigeon. How... rustic. Do you have an appointment? No, of course you do not.', 'Do not worry, I am only mildly appalled. Please, speak. Briefly.'],
+    topics: [
+      { text: 'Got any work for me?', lines: ['Work! My dear, I have OPPORTUNITIES. Unpaid, of course, but think of the exposure.', 'I once gave a pigeon a handshake. He still talks about it. Lovely fellow. Never learned his name.'] },
+      { text: 'Tell me about Rat Corp.', fn: 'hint' },
+      { text: 'You seem nice.', lines: ['You are so sweet! Everyone says that about the staff.', 'Now shoo. You are standing on my shoe. It costs more than your entire flock.'] },
+    ] },
+  { id: 'priscilla', short: 'Priscilla', name: 'Priscilla Vanderrat',
+    open: ['Is that a pigeon? In MY gallery district? Marvelous. So authentic. So... poor.', 'I adore your people. You are all so... resilient. Like little gray rocks.'],
+    topics: [
+      { text: 'What are you doing here?', lines: ['Collecting. Art, mostly. Sometimes a pigeon feather. They go for a fortune at auction. At my auctions.'] },
+      { text: 'Sell her a feather (+2 coins)', fn: 'feather' },
+      { text: 'Rude.', lines: ['Rude? Darling, I called you resilient. That is my highest compliment. I say it to the cleaning staff.'] },
+    ] },
+  { id: 'fenwick', short: 'Mr. Fenwick', name: 'Mr. Fenwick III, Esq.',
+    open: ['Ah. A pigeon. You are on my sidewalk. And my air. And, technically, my reflection in that window.', 'Rent is due. Do not ask what for. Everything is mine. Even the pigeons. Especially the pigeons.'],
+    topics: [
+      { text: 'I live in a tree.', lines: ['Trees are zoned commercial. I will send a letter. A very small, very expensive letter.'] },
+      { text: 'Any advice?', lines: ['Advice? Simple. Be born into a trust fund. Short of that, I suppose... look cute and avoid bridges.', 'That will be four hundred dollars. I am joking. It is five hundred.'] },
+      { text: 'Pay me for the sidewalk.', lines: ['Hah! You are funny. I like funny. It is cheaper than staff.', 'Here. Take this crumb. Do not tell my lawyers. They are sharks, you know. Real ones.'], gift: 1 },
+    ] },
+  { id: 'baron', short: 'the Baron', name: 'Baron von Squeak',
+    open: ['Hmm? Oh. A bird. On the ground. How quaint. Do you walk everywhere? Fascinating.', 'I have a jet. It is a gold-plated pretzel. You would not understand.'],
+    topics: [
+      { text: 'Know anything about the Rat Tycoon?', fn: 'tycoon' },
+      { text: 'Can I get a ride in your jet?', lines: ['In the pretzel? Ha! It is a metaphor, little one. I would never let you near the upholstery.'] },
+      { text: 'You are very rich.', lines: ['I know. I look at my bank statement every morning and I weep. Tears of joy. Mostly.'] },
+    ] },
+];
+
 const CHATTER = [
   'I saw a rat in a top hat. I am not kidding. Top. Hat.', 'Walk here, walk there. Never any crumbs for the common pigeon.',
   'The subway is faster than flying. Do not ask me how I know.', 'My cousin lives in Brooklyn. We do not talk about it.',
@@ -106,6 +139,7 @@ export class Story {
     this.bobT = 0;
     this.cast = CAST.map((c) => this.makeNpc(c)).filter(Boolean);
     this.rosa = null;
+    this.snobs = this.makeSnobs();
     this.ui();
     if (st.active) this.start(st.active, true);
   }
@@ -145,6 +179,20 @@ export class Story {
     const npc = { c, x: p.x, z: p.z, yaw: 0, pigeon, mark };
     pigeon.root.position.set(p.x, this.o.world.groundHeight(p.x, p.z), p.z);
     return npc;
+  }
+
+  makeSnobs() {
+    const w = this.o.world, combat = this.o.combat; if (!combat) return [];
+    const doors = w.shopDoors.filter((d) => d.kind === 12);
+    const picks = [];
+    for (const d of doors) { if (picks.every((q) => Math.hypot(q.x - d.x, q.z - d.z) > 90) && Math.hypot(d.x - w.spawn.x, d.z - w.spawn.z) > 25) picks.push(d); if (picks.length >= SNOBS.length) break; }
+    return picks.map((d, i) => {
+      const c = SNOBS[i], a = this.spot(d.x + d.nx * 2.2 - d.nz * 3.0, d.z + d.nz * 2.2 + d.nx * 3.0);
+      const mesh = new THREE.Mesh(combat.geo, combat.mat); mesh.scale.setScalar(2.3); mesh.castShadow = true;
+      mesh.position.set(a.x, w.groundHeight(a.x, a.z), a.z); this.group.add(mesh);
+      const mark = signSprite('$', '#7dffb0'); this.group.add(mark); mark.userData.s = 'snob';
+      return { c: { ...c, snob: true }, x: a.x, z: a.z, yaw: Math.random() * 6, mesh, mark, t: Math.random() * 6 };
+    });
   }
 
   /* ---------------------------------------------------------------- dialogue UI */
@@ -188,14 +236,14 @@ export class Story {
     const f = d.choices[i].fn; this.close(true); f && f();
   }
   close(skipDone = false) {
-    const d = this.dlg; this.dlg = null; this.el.classList.remove('on'); this.o.player.frozen = false;
+    const d = this.dlg; this.dlg = null; this.el.classList.remove('on'); this.o.player.frozen = false; this.o.onClose?.();
     if (d && d.done && !skipDone) d.done();
   }
 
   /* ---------------------------------------------------------------- talking */
   npcNear(x, z) {
     let best = null, bd = 3.2 * 3.2;
-    for (const n of this.cast) { const d = (n.x - x) ** 2 + (n.z - z) ** 2; if (d < bd) { bd = d; best = n; } }
+    for (const n of this.cast.concat(this.snobs)) { const d = (n.x - x) ** 2 + (n.z - z) ** 2; if (d < bd) { bd = d; best = n; } }
     return best;
   }
   rosaNear(x, z) { return this.rosa && (this.rosa.x - x) ** 2 + (this.rosa.z - z) ** 2 < 3.2 * 3.2 ? this.rosa : null; }
@@ -204,7 +252,31 @@ export class Story {
     const gift = Math.random() < 0.3 ? 1 + Math.floor(Math.random() * 2) : 0;
     this.say('Pigeon', gift ? [line, `Here, take ${gift} crumb${gift > 1 ? 's' : ''}. I pecked too many today.`] : [line], null, () => { if (gift) this.o.crumbs(gift); });
   }
+  talkSnob(n) {
+    const c = n.c, o = this.o;
+    const node = { lines: c.open, choices: c.topics.map((t) => ({ text: t.text, fn: () => this.snobTopic(c, t) })).concat([{ text: 'Leave.', fn: () => {} }]) };
+    this.say(c.name, node.lines, node.choices);
+  }
+  snobTopic(c, t) {
+    const o = this.o;
+    if (t.fn === 'hint') {
+      const nests = o.quest ? o.quest.nests.filter((x) => x.alive) : [];
+      if (!nests.length) return this.say(c.name, ['Rat Corp? Oh, that. Do not bring it up. We are... restructuring. Following a bad week of poop.', '*sniffles* I am only here for the crumbs now. Not a word.']);
+      const P = o.player; let b = null, bd = 1e9; for (const x of nests) { const d = Math.hypot(x.x - P.x, x.z - P.z); if (d < bd) { bd = d; b = x; } }
+      return this.say(c.name, ['Rat Corp? A delightful little company. Entirely above board. Totally legal. Do not look at the subway.', `Whatever you do, do not go ${Math.round(bd / 10) * 10} metres ${compass(b.x - P.x, b.z - P.z)} to the stash by the subway entrance. Absolutely not. Never. I did not tell you that.`]);
+    }
+    if (t.fn === 'tycoon') {
+      return this.say(c.name, ['The Tycoon? Oh, he is a dear friend. And a terrible tipper.', 'Between us, he is terrified of one thing: poop. The unwashed kind. Do not ever tell him I said so. I have a reputation. And a lawyer. And a second lawyer.']);
+    }
+    if (t.fn === 'feather') {
+      o.coins(2); o.sfx('coin');
+      return this.say(c.name, ['A real pigeon feather! Two coins, and it will go for a fortune at auction. At my auction. To me.', 'You people really have no idea what things are worth. Adorable.']);
+    }
+    if (t.gift) o.crumbs?.(t.gift);
+    this.say(c.name, t.lines, null);
+  }
   talk(n) {
+    if (n.c.snob) return this.talkSnob(n);
     const c = n.c, st = this.st;
     if (st.done.includes(c.id)) return this.say(c.name, c.after);
     if (st.active === c.id) {
@@ -297,6 +369,13 @@ export class Story {
       n.mark.visible = !!st && outdoor;
       if (n.mark.userData.s !== st) { n.mark.userData.s = st; n.mark.material.map.dispose(); const t = signSprite(st === 2 ? '?' : '!', st === 2 ? '#7dffb0' : '#ffd24a'); n.mark.material.map = t.material.map; n.mark.material.needsUpdate = true; }
       n.mark.position.set(n.x, w.groundHeight(n.x, n.z) + 2.5 + Math.sin(this.bobT * 3) * 0.1, n.z);
+    }
+    for (const n of this.snobs) {
+      n.t += dt; const d = Math.hypot(P.x - n.x, P.z - n.z);
+      if (d < 14) { const want = Math.atan2(P.x - n.x, P.z - n.z); let da = want - n.yaw; da = Math.atan2(Math.sin(da), Math.cos(da)); n.yaw += da * Math.min(1, dt * 3); }
+      n.mesh.rotation.y = n.yaw; n.mesh.position.y = w.groundHeight(n.x, n.z) + Math.abs(Math.sin(n.t * 2)) * 0.02;
+      n.mesh.rotation.x = -0.12 + Math.sin(n.t * 1.3) * 0.03;   // chin up
+      n.mesh.visible = outdoor; n.mark.visible = outdoor; n.mark.position.set(n.x, w.groundHeight(n.x, n.z) + 1.9 + Math.sin(this.bobT * 3) * 0.1, n.z);
     }
     if (this.rosa) {
       const n = this.rosa; const want = Math.atan2(P.x - n.x, P.z - n.z); n.yaw = want; n.pigeon.root.rotation.y = n.yaw; n.pigeon.update(dt, 0);

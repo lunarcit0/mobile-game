@@ -18,6 +18,7 @@ import { Burglars } from './burglars.js';
 import { Cops } from './cops.js';
 import { Quest } from './quest.js';
 import { Story } from './story.js';
+import { Minimap } from './minimap.js';
 import { MiniGames } from './minigames.js';
 import { makeHelpSign, bobSigns } from './helpsign.js';
 import { SHOP_JOBS } from './interiors.js';
@@ -114,8 +115,12 @@ function startPlay() {
 }
 $('play').addEventListener('click', startPlay);
 canvas.addEventListener('click', () => { if (!player.locked && overlay.classList.contains('hidden') && !params.has('nolock')) canvas.requestPointerLock?.(); });
+function uiHoldsMouse() { return !!(story.talking || wardrobe.active || mg.active || performance.now() < mouseReleaseUntil); }
+let mouseReleaseUntil = 0;
+function relock() { if (!params.has('nolock') && overlay.classList.contains('hidden') && !paused) canvas.requestPointerLock?.(); }
 document.addEventListener('pointerlockchange', () => {
-  if (!player.locked && !params.has('nolock')) {
+  // we release the mouse on purpose for dialogue, the wardrobe and mini-games: no pause screen then
+  if (!player.locked && !params.has('nolock') && !uiHoldsMouse()) {
     overlay.classList.remove('hidden');
     $('play').textContent = 'Resume';
   }
@@ -224,8 +229,9 @@ combat.extraTargets = burglars.targets;
 outdoorObjs.push(burglars.group);
 const quest = new Quest({ scene, world, player, combat, fx, audio, save, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), targets: burglars.targets, onWin: () => {} });
 outdoorObjs.push(quest.group);
-const story = new Story({ scene, world, player, save, burglars, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), crumbs: (n) => setCrumbs(crumbs + n), getMode: () => mode });
+const story = new Story({ scene, world, player, save, burglars, combat, quest, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), crumbs: (n) => setCrumbs(crumbs + n), getMode: () => mode, onClose: () => relock() });
 outdoorObjs.push(story.group);
+const minimap = new Minimap({ world, player, quest, missions, story, save, getMode: () => mode });
 const cops = new Cops({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), getCoins: () => save.data.coins, sfx: (n) => audio.sfx(n), speedOf: () => Math.abs(vehicles.speed) });
 outdoorObjs.push(cops.group);
 
@@ -275,7 +281,7 @@ const wardrobe = new Wardrobe({
   save, getCoins: () => save.data.coins, spend: (n) => setCoins(save.data.coins - n),
   onLook: (look) => { player.pigeon.setLook(look); syncLook(); },
   sfx: (n) => audio.sfx(n), toast: (m) => toast(m, 2),
-  onClose: () => { player.frozen = false; },
+  onClose: () => { player.frozen = false; relock(); },
 });
 player.onToggle = (what, on) => {
   if (what === 'fly') toast(on ? 'Flying! Space/Ctrl to rise & dip, Shift = faster, G to land' : 'Landed', 2.2);
@@ -387,7 +393,7 @@ function currentPrompt() {
       if (d < 3.6) consider(d - 1.5, { id: 'subway', sw: s, text: 'Take the stairs down to the subway' });
     }
     const sn = story.npcNear(px, pz);
-    if (sn) consider(Math.hypot(sn.x - px, sn.z - pz) - 1.2, { id: 'talk', npc: sn, text: `Talk to ${sn.c.name}` });
+    if (sn) consider(Math.hypot(sn.x - px, sn.z - pz) - 1.2, { id: 'talk', npc: sn, text: sn.c.snob ? `Talk to ${sn.c.short} (if they let you)` : `Talk to ${sn.c.name}` });
     const rs = story.rosaNear(px, pz);
     if (rs) consider(Math.hypot(rs.x - px, rs.z - pz) - 2.5, { id: 'rosa', text: 'Talk to Rosa (deliver the package)' });
     const cn = npcs.nearest(px, pz, 2.2);
@@ -459,6 +465,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyC') coo();
   else if (e.code === 'KeyM') toggleMute();
   else if (e.code === 'KeyJ' || e.code === 'KeyR') workHere();
+  else if (e.code === 'KeyN') minimap.toggle();
   else if (e.code === 'KeyT') { if (!paused) missions.toggle(); }
   else if (e.code === 'KeyP') { if (paused) startPlay(); else if (overlay.classList.contains('hidden')) setPaused(true); }
   else if (e.code === 'Escape' && wardrobe.active) wardrobe.close();
@@ -551,6 +558,7 @@ function update(dt) {
     burglars.update(dt, mode === 'street');
     cops.update(dt, mode);
     story.update(dt, true);
+    minimap.update(dt);
     quest.update(dt, mode === 'street');
     bobSigns(helpSigns, time);
     fx.update(dt);
@@ -609,7 +617,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, mg, startJob, story, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
+  scene, camera, renderer, player, world, mg, startJob, minimap, story, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };
