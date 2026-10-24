@@ -28,6 +28,9 @@ Earn coins, spend them on clothes at the BOUTIQUE (walk to the mirror, press E).
 - **Crashes:** cars dent and smoke, knock over stop signs, lamps, hydrants and bins, and bonk pedestrians.
 - **City College** is the campus block east of the start.
 
+## Story pigeons
+Pigeons with a yellow `!` over their head give GTA-style missions: Big Tony (a delivery for Rosa), Detective Dolores (catch the burglar), Professor Pidge (lost textbooks at City College), Gina (taxi fares) and Chef Marco (pizza shift). One mission at a time; press E to talk. Any other pigeon will chat if you press E near it. The main goal: wreck the five Rat Corp stashes and beat the Rat Tycoon.
+
 ## Edit and rebuild
 ```
 npm install

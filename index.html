@@ -37,6 +37,17 @@
   #kills { position:fixed; top:82px; left:16px; padding:4px 12px; border-radius:8px; background:var(--glass); font-weight:700; font-size:13px; pointer-events:none; }
   #quest { position:fixed; top:112px; left:16px; padding:6px 12px; border-radius:8px; background:var(--glass); border:1px solid rgba(255,200,61,.5); font-weight:700; font-size:13px; pointer-events:none; max-width:min(300px,60vw); }
   #qarrow { color:#ffd24a; margin-right:8px; display:inline-block; }
+  #story { position:fixed; top:148px; left:16px; padding:6px 12px; border-radius:8px; background:var(--glass); border:1px solid rgba(125,255,176,.55); font-weight:700; font-size:13px; pointer-events:none; max-width:min(320px,62vw); }
+  #sarrow { color:#7dffb0; margin-right:8px; display:inline-block; }
+  #dlg { position:fixed; inset:0; z-index:6; display:none; align-items:flex-end; justify-content:center; padding-bottom:max(16px, env(safe-area-inset-bottom)); background:linear-gradient(0deg, rgba(0,0,0,.45), rgba(0,0,0,0) 55%); }
+  #dlg.on { display:flex; }
+  #dlg .dbox { width:min(640px,94vw); background:rgba(20,16,32,.94); border:2px solid #ffd24a; border-radius:16px; padding:14px 18px 12px; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+  #dlg .dname { font-weight:900; color:#ffd24a; letter-spacing:.03em; margin-bottom:6px; }
+  #dlg .dtext { font-size:17px; line-height:1.4; min-height:48px; }
+  #dlg .dchoices { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  #dlg .dchoices button { font:inherit; font-weight:800; padding:8px 16px; border-radius:999px; border:0; background:#ffd24a; color:#241a00; cursor:pointer; }
+  #dlg .dchoices button:nth-child(2) { background:rgba(255,255,255,.2); color:#fff; }
+  #dlg .dhint { font-size:12px; opacity:.6; margin-top:8px; text-align:right; }
   #hurt { position:fixed; inset:0; pointer-events:none; opacity:0; z-index:3; background:radial-gradient(ellipse at center, rgba(180,0,0,0) 45%, rgba(190,10,10,.75) 100%); transition:opacity .25s; }
   #fps { position:fixed; top:110px; right:16px; top:16px; right:16px; font:12px ui-monospace, monospace; opacity:.8; }
   #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background: radial-gradient(ellipse at 50% 40%, rgba(16,21,27,.55), rgba(10,13,17,.9)); z-index:5; transition:opacity .3s; }
@@ -78,6 +89,7 @@
 <div id="hp"><i></i></div>
 <div id="kills">Rats beaten 0</div>
 <div id="hurt"></div>
+<div id="story" style="display:none"><span id="sarrow">&#9650;</span><span id="stext"></span></div>
 <div id="quest"><span id="qarrow">&#9650;</span><span id="qtext"></span></div>
 <div id="crumbs">Crumbs 0</div>
 <div id="mission" style="display:none"><span id="marrow">&#9650;</span><span id="mtext"></span></div>
