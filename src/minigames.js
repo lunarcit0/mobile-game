@@ -3,8 +3,9 @@ import { W, H, clamp, Game } from './mg_core.js';
 import { GAMES_A } from './mg_a.js';
 import { GAMES_B } from './mg_b.js';
 import { GAMES_C } from './mg_c.js';
+import { GAMES_D } from './mg_d.js';
 
-const REG = Object.assign({}, GAMES_A, GAMES_B, GAMES_C);
+const REG = Object.assign({}, GAMES_A, GAMES_B, GAMES_C, GAMES_D);
 const GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'Enter', 'Escape', 'KeyF', 'KeyE', 'KeyQ']);
 
 const CSS = `

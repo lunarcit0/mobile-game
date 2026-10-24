@@ -322,7 +322,7 @@ const SHOP_BUILDERS = [
 ];
 
 // Which shops offer a job (mini-game) and what it is called.
-export const SHOP_JOBS = { DELI: ['deli', 'Work the deli register'], PIZZA: ['pizza', 'Make pizzas'], FLOWERS: ['flowers', 'Arrange bouquets'], CAFE: ['donuts', 'Make donuts'], NOODLES: ['bike', 'Deliver food by bike'], BAGELS: ['donuts', 'Bake and glaze'] };
+export const SHOP_JOBS = { DELI: ['deli', 'Work the deli register'], PIZZA: ['pizza', 'Make pizzas'], FLOWERS: ['flowers', 'Arrange bouquets'], CAFE: ['donuts', 'Make donuts'], NOODLES: ['bike', 'Deliver food by bike'], BAGELS: ['donuts', 'Bake and glaze'], BARBER: ['barber', 'Cut and style feathers'] };
 
 /* ==================================================================
    NPC pigeons inside rooms

@@ -10,7 +10,7 @@ function texture() {
   g.lineWidth = 8; g.strokeStyle = '#c0261e'; g.stroke();
   g.fillStyle = '#c0261e'; g.font = '900 64px system-ui, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText('HELP WANTED', 256, 66);
-  g.fillStyle = '#3a2a00'; g.font = '800 30px system-ui, Arial'; g.fillText('press J to work', 256, 123);
+  g.fillStyle = '#3a2a00'; g.font = '800 30px system-ui, Arial'; g.fillText(matchMedia('(pointer: coarse)').matches ? 'tap WORK to work' : 'press J to work', 256, 123);
   tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }

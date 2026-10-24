@@ -246,7 +246,7 @@ export function buildCity(scene) {
         for (let s = 0; s < nShops; s++) {
           const off = -len / 2 + sw * (s + 0.5);
           let si = Math.floor(rng() * 12);
-          if (world.shopDoors.length === 7) si = 12;   // one boutique, always the same door
+          if (world.shopDoors.length % 24 === 7) si = 12;   // a boutique every so often
           const shopMat = shopMats[si];
           const plane = new THREE.Mesh(shopPlane, shopMat);
           plane.scale.set(sw - 0.4, 3.3, 1);

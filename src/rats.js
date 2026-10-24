@@ -3,8 +3,8 @@ import * as THREE from 'three';
 import { G, part, merge, vcMaterial } from './gfx.js';
 import { LIMIT, BUILD, SIDEWALK, rng, rand, clamp, angleLerp } from './config.js';
 
-const MAX_RATS = 12;
-const SIGHT = 26;            // a rat that sees you from this far starts the attack
+const MAX_RATS = 4;
+const SIGHT = 18;            // a rat that sees you from this far starts the attack
 const LOSE = 48;             // ...and gives up when you get this far away
 const ROAM_SPEED = 1.8;
 const BITE_RANGE = 1.0;
@@ -33,6 +33,19 @@ function ratGeometry() {
     part(G.cyl, pink, [0, 0.12, -0.6], [0.017, 0.6, 0.017], [Math.PI / 2 - 0.12, 0, 0]),
   ];
   for (const sx of [-1, 1]) for (const z of [-0.14, 0.14]) p.push(part(G.box, dark, [sx * 0.1, 0.04, z], [0.045, 0.09, 0.07]));
+  // billionaire kit: top hat, gold monocle, gold chain, little bow tie
+  const gold = 0xf2c230;
+  p.push(
+    part(G.cyl, 0x14121a, [0, 0.302, 0.27], [0.1, 0.014, 0.1]),
+    part(G.cyl, 0x14121a, [0, 0.37, 0.27], [0.062, 0.14, 0.062]),
+    part(G.cyl, gold, [0, 0.327, 0.27], [0.066, 0.02, 0.066]),
+    part(G.box, gold, [0.052, 0.235, 0.41], [0.04, 0.04, 0.008]),
+    part(G.box, 0x14121a, [0.052, 0.235, 0.415], [0.026, 0.026, 0.008]),
+    part(G.box, gold, [0.0, 0.2, 0.2], [0.17, 0.014, 0.014]),
+    part(G.sphere, gold, [0, 0.17, 0.2], [0.022, 0.022, 0.022]),
+    part(G.box, 0xb3202a, [0.03, 0.14, 0.4], [0.03, 0.02, 0.012]),
+    part(G.box, 0xb3202a, [-0.03, 0.14, 0.4], [0.03, 0.02, 0.012]),
+  );
   return merge(p);
 }
 
@@ -71,7 +84,7 @@ export class Combat {
     }
     this.splatI = 0;
 
-    for (let i = 0; i < 8; i++) this.spawnRat(true);
+    for (let i = 0; i < 3; i++) this.spawnRat(true);
   }
 
   /* ----------------------------------------------------------- helpers */
@@ -127,7 +140,7 @@ export class Combat {
         const s = subs[Math.floor(rng() * subs.length)];
         x = s.x + rand(-5, 5); z = s.z + rand(-5, 5);
       } else {
-        const a = rng() * Math.PI * 2, d = initial ? rand(35, 95) : rand(32, 70);
+        const a = rng() * Math.PI * 2, d = initial ? rand(35, 95) : rand(45, 80);
         x = p.x + Math.cos(a) * d; z = p.z + Math.sin(a) * d;
       }
       if (Math.abs(x) > LIMIT - 2 || Math.abs(z) > LIMIT - 2) continue;
@@ -231,7 +244,7 @@ export class Combat {
     if (ctx.active) {
       this.spawnT -= dt;
       const alive = this.rats.filter((r) => r.state !== 'dead').length;
-      if (this.spawnT <= 0 && alive < MAX_RATS) { this.spawnT = 1.2; this.spawnRat(); }
+      if (this.spawnT <= 0 && alive < MAX_RATS) { this.spawnT = 7; this.spawnRat(); }
     }
 
     // bombs
@@ -287,7 +300,7 @@ export class Combat {
       if (show !== r.shown) { r.shown = show; r.mesh.visible = show; }
 
       // run over by the player's car
-      if (ctx.car && ctx.car.speed > 4 && (r.x - ctx.car.x) ** 2 + (r.z - ctx.car.z) ** 2 < 2.1 * 2.1) { this.splat(r.x, r.y, r.z, 1.6); this.killRat(r); continue; }
+      if (!r.king && ctx.car && ctx.car.speed > 4 && (r.x - ctx.car.x) ** 2 + (r.z - ctx.car.z) ** 2 < 2.1 * 2.1) { this.splat(r.x, r.y, r.z, 1.6); this.killRat(r); continue; }
 
       // sight check
       r.sightT -= dt;
@@ -297,22 +310,22 @@ export class Combat {
           r.state = 'chase'; r.vy = 3;
           this.hooks.audio.ratSqueak(r.x, r.z, false);
           if (!this.alerted) { this.alerted = true; this.hooks.alert?.(); }
-        } else if (r.state === 'chase' && (!ctx.hunted || d > LOSE)) r.state = 'roam';
+        } else if (r.state === 'chase' && !r.king && (!ctx.hunted || d > LOSE)) r.state = 'roam';
       }
 
       let moving = 0;
       if (r.state === 'chase') {
         const want = Math.atan2(dx, dz);
         r.yaw = angleLerp(r.yaw, want, Math.min(1, dt * 10));
-        if (d > BITE_RANGE * 0.8 && r.lunge <= 0) {
+        if (d > (r.king ? 2.4 : BITE_RANGE) * 0.8 && r.lunge <= 0) {
           const s = r.spd * (d > 12 ? 1.08 : 1);
           r.x += Math.sin(r.yaw) * s * dt; r.z += Math.cos(r.yaw) * s * dt; moving = s;
         }
         r.biteCD -= dt;
-        if (d < BITE_RANGE && r.biteCD <= 0 && ctx.hunted) {
+        if (d < (r.king ? 2.6 : BITE_RANGE) && r.biteCD <= 0 && ctx.hunted) {
           r.biteCD = BITE_COOLDOWN; r.lunge = 0.22;
           const airborne = !p.grounded && p.y - this.world.groundHeight(p.x, p.z) > 0.45;   // hop over the bite
-          if (!airborne) { this.hooks.damage(BITE_DMG, r); } else this.hooks.audio.ratSqueak(r.x, r.z, false);
+          if (!airborne) { this.hooks.damage(r.bite ?? BITE_DMG, r); } else this.hooks.audio.ratSqueak(r.x, r.z, false);
         }
       } else {
         r.t -= dt;

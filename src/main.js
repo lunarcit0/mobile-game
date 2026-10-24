@@ -9,12 +9,14 @@ import { Interiors } from './interiors.js';
 import { AudioEngine } from './audio.js';
 import { Combat } from './rats.js';
 import { Fx } from './fx.js';
+import { Skyline } from './skyline.js';
 import { Breakables } from './breakables.js';
 import { save } from './save.js';
 import { Wardrobe } from './wardrobe.js';
 import { Missions } from './missions.js';
 import { Burglars } from './burglars.js';
 import { Cops } from './cops.js';
+import { Quest } from './quest.js';
 import { MiniGames } from './minigames.js';
 import { makeHelpSign, bobSigns } from './helpsign.js';
 import { SHOP_JOBS } from './interiors.js';
@@ -31,7 +33,7 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 const SKY = new THREE.Color(0xa9c7e4);
-const FOG = new THREE.Color(0xc6d3df);
+const FOG = new THREE.Color(0xe3b49a);
 const outdoorFog = new THREE.Fog(FOG, 120, 520);
 scene.fog = outdoorFog;
 scene.background = SKY;
@@ -42,16 +44,18 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 1500);
 const sky = new Sky();
 sky.scale.setScalar(1200);
 const u = sky.material.uniforms;
-u.turbidity.value = 4; u.rayleigh.value = 1.4; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8;
-const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(58), THREE.MathUtils.degToRad(150));
+u.turbidity.value = 10; u.rayleigh.value = 3; u.mieCoefficient.value = 0.005; u.mieDirectionalG.value = 0.7;   // sunset sky
+const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(86), THREE.MathUtils.degToRad(180));
 u.sunPosition.value.copy(sun);
 scene.add(sky);
+const skyline = new Skyline(THREE.MathUtils.degToRad(180));
+scene.add(skyline.group);
 
 // lights
-const HEMI_OUT = { intensity: 1.9, color: 0xcfe3f7, ground: 0x9a8f80 };
+const HEMI_OUT = { intensity: 2.1, color: 0xf6cfb4, ground: 0x9a8078 };
 const hemi = new THREE.HemisphereLight(HEMI_OUT.color, HEMI_OUT.ground, HEMI_OUT.intensity);
 scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xfff0d8, 2.8);
+const dir = new THREE.DirectionalLight(0xffb878, 2.9);
 dir.castShadow = true;
 dir.shadow.mapSize.set(2048, 2048);
 const sc = dir.shadow.camera;
@@ -84,10 +88,10 @@ const combat = new Combat(scene, world, player, {
   audio,
   damage: (n) => hurtPlayer(n),
   crumbs: (n) => { setCrumbs(crumbs + n); },
-  killed: () => { addCoins(3); save.data.stats.rats++; toast('Rat beaten!  +3 coins', 1.4); },
-  alert: () => toast('Rats! Press F or click to throw a poop bomb', 3.5),
+  killed: (r) => { quest.onKilled(r); if (r.king) return; addCoins(3); save.data.stats.rats++; toast('Rat beaten!  +3 coins', 1.4); },
+  alert: () => toast('Billionaire rats! Press F or click to throw a poop bomb', 3.5),
 });
-const outdoorObjs = [world.group, traffic.group, npcs.group, sky, combat.group, fx.group];
+const outdoorObjs = [skyline.group, world.group, traffic.group, npcs.group, sky, combat.group, fx.group];
 
 // ------------------------------------------------------------------ UI
 const $ = (id) => document.getElementById(id);
@@ -99,7 +103,9 @@ const fadeEl = $('fade');
 const crumbEl = $('crumbs');
 const toastEl = $('toast');
 
+let introShown = false;
 function startPlay() {
+  if (!introShown) { introShown = true; setTimeout(() => quest.intro(), 1200); }
   setPaused(false);
   overlay.classList.add('hidden');
   audio.start();
@@ -154,6 +160,9 @@ if (isTouch) {
   $('jump').addEventListener('touchstart', (e) => { player.keys.Space = true; e.preventDefault(); }, { passive: false });
   $('jump').addEventListener('touchend', () => { player.keys.Space = false; });
   $('act').addEventListener('touchstart', (e) => { interact(); e.preventDefault(); }, { passive: false });
+  $('work').addEventListener('touchstart', (e) => { workHere(); e.preventDefault(); }, { passive: false });
+  $('tjob').addEventListener('touchstart', (e) => { if (!paused) missions.toggle(); e.preventDefault(); }, { passive: false });
+  $('flybtn').addEventListener('touchstart', (e) => { if (mode === 'street') player.toggleFly(); e.preventDefault(); }, { passive: false });
   $('fire').addEventListener('touchstart', (e) => { fireBomb(); e.preventDefault(); }, { passive: false });
   $('horn').addEventListener('touchstart', (e) => { honk(); e.preventDefault(); }, { passive: false });
 }
@@ -212,6 +221,8 @@ const missions = new Missions({
 const burglars = new Burglars({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n) });
 combat.extraTargets = burglars.targets;
 outdoorObjs.push(burglars.group);
+const quest = new Quest({ scene, world, player, combat, fx, audio, save, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), sfx: (n) => audio.sfx(n), targets: burglars.targets, onWin: () => {} });
+outdoorObjs.push(quest.group);
 const cops = new Cops({ scene, world, player, audio, toast: (m, t) => toast(m, t), coins: (n) => addCoins(n), getCoins: () => save.data.coins, sfx: (n) => audio.sfx(n), speedOf: () => Math.abs(vehicles.speed) });
 outdoorObjs.push(cops.group);
 
@@ -222,7 +233,7 @@ function syncLook() {
   const l = save.data.look;
   mg.setLook({ body: hexOf(l.body?.color), hat: l.hat?.type ?? 'none', glasses: !!l.face, scarf: l.neck ? hexOf(l.neck.color, '#d8312a') : null });
 }
-const GAME_NAMES = { pizza: 'Pizza', flowers: 'Flower shop', donuts: 'Donuts', deli: 'Deli', bike: 'Bike delivery', subway: 'Subway Surfing', hotdogs: 'Hot dogs', gyros: 'Gyros', bus: 'Bus' };
+const GAME_NAMES = { pizza: 'Pizza', flowers: 'Flower shop', donuts: 'Donuts', deli: 'Deli', bike: 'Bike delivery', subway: 'Subway Surfing', hotdogs: 'Hot dogs', barber: 'Barber', gyros: 'Gyros', bus: 'Bus' };
 function startJob(game) {
   if (mg.active || !game) return;
   syncLook(); document.exitPointerLock?.(); audio.sfx('click');
@@ -392,6 +403,11 @@ function currentPrompt() {
   return best;
 }
 
+function workHere() {
+  const pr = currentPrompt(); const game = pr && (pr.alt || (pr.id === 'job' && pr.game));
+  if (game && !paused && !wardrobe.active) startJob(game);
+}
+
 function interact() {
   const pr = currentPrompt();
   if (!pr || !pr.enabled) return;
@@ -429,7 +445,7 @@ addEventListener('keydown', (e) => {
   else if (e.code === 'KeyH') honk();
   else if (e.code === 'KeyC') coo();
   else if (e.code === 'KeyM') toggleMute();
-  else if (e.code === 'KeyJ' || e.code === 'KeyR') { const pr = currentPrompt(); const game = pr && (pr.alt || (pr.id === 'job' && pr.game)); if (game && !paused && !wardrobe.active) startJob(game); }
+  else if (e.code === 'KeyJ' || e.code === 'KeyR') workHere();
   else if (e.code === 'KeyT') { if (!paused) missions.toggle(); }
   else if (e.code === 'KeyP') { if (paused) startPlay(); else if (overlay.classList.contains('hidden')) setPaused(true); }
   else if (e.code === 'Escape' && wardrobe.active) wardrobe.close();
@@ -466,7 +482,8 @@ function updateHud(dt) {
   if (mode === 'street') {
     const sub = world.subways.find((s) => (s.x - player.x) ** 2 + (s.z - player.z) ** 2 < 14 * 14);
     const tr = sub ? null : world.trucks.find((s) => (s.x - player.x) ** 2 + (s.z - player.z) ** 2 < 12 * 12);
-    const hint = sub ? `Subway: ${sub.station}  (${sub.lines.join(' ')})` : tr ? `Food truck: ${tr.name}` : '';
+    const bq = (sub || tr) ? null : world.shopDoors.find((d) => d.kind === 12 && (d.x - player.x) ** 2 + (d.z - player.z) ** 2 < 16 * 16);
+    const hint = bq ? 'Boutique: spend your coins on clothes' : sub ? `Subway: ${sub.station}  (${sub.lines.join(' ')})` : tr ? `Food truck: ${tr.name}` : '';
     if (hint !== hintEl.textContent) { hintEl.textContent = hint; hintEl.style.opacity = hint ? 1 : 0; }
   } else if (hintEl.textContent) { hintEl.textContent = ''; hintEl.style.opacity = 0; }
 
@@ -475,13 +492,21 @@ function updateHud(dt) {
   if (key !== lastPromptKey) {
     lastPromptKey = key;
     if (nextPrompt) {
-      promptEl.innerHTML = `<b>${nextPrompt.enabled ? 'E' : '...'}</b> ${nextPrompt.text}`;
+      promptEl.innerHTML = `<b>${nextPrompt.enabled ? 'E' : '...'}</b> ${isTouch ? nextPrompt.text.replace('J:', 'WORK button:') : nextPrompt.text}`;
       promptEl.classList.toggle('dim', !nextPrompt.enabled);
       promptEl.style.opacity = 1;
     } else promptEl.style.opacity = 0;
     document.body.classList.toggle('canact', !!(nextPrompt && nextPrompt.enabled));
   }
   document.body.classList.toggle('driving', mode === 'driving');
+  const canWork = !!(nextPrompt && (nextPrompt.alt || (nextPrompt.id === 'job' && nextPrompt.game)));
+  const wb = $('work'); if (wb.classList.contains('on') !== canWork) wb.classList.toggle('on', canWork);
+  const car = mode === 'driving' ? vehicles.car : null;
+  const tj = $('tjob'), tjOn = !!(car && (car.type === 'taxi' || car.type === 'bus'));
+  if (tj.classList.contains('on') !== tjOn) tj.classList.toggle('on', tjOn);
+  const tjText = missions.active ? 'END JOB' : car && car.type === 'bus' ? 'BUS ROUTE' : 'TAXI FARE';
+  if (tj.textContent !== tjText) tj.textContent = tjText;
+  $('flybtn').classList.toggle('flying', player.flying);
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.style.opacity = 0; }
 }
 
@@ -512,6 +537,7 @@ function update(dt) {
     breakables.update(dt, player.x, player.z);
     burglars.update(dt, mode === 'street');
     cops.update(dt, mode);
+    quest.update(dt, mode === 'street');
     bobSigns(helpSigns, time);
     fx.update(dt);
     combat.update(dt, { active: true, hunted: mode === 'street' && !dead && !fading, car: mode === 'driving' ? { x: player.x, z: player.z, speed: Math.abs(vehicles.speed) } : null });
@@ -520,6 +546,7 @@ function update(dt) {
     dir.target.position.set(player.x, 0, player.z);
     dir.target.updateMatrixWorld();
     sky.position.set(player.x, 0, player.z);
+    skyline.update(player.x, player.z);
   } else {
     player.update(dt);
     current.update(dt, player);
@@ -568,7 +595,7 @@ function frame() {
 }
 
 window.__game = {
-  scene, camera, renderer, player, world, mg, startJob, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
+  scene, camera, renderer, player, world, mg, startJob, quest, cops, burglars, missions, fx, breakables, save, wardrobe, addCoins, setPaused, get paused() { return paused; }, traffic, npcs, vehicles, interiors, audio, dir, combat, fireBomb,
   get fps() { return fps; }, get mode() { return mode; }, get crumbs() { return crumbs; }, get current() { return current; },
   startPlay, update, interact, currentPrompt, enterShop, enterSubway, toggleMute, honk, coo, get time() { return time; },
 };
